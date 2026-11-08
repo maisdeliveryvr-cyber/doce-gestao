@@ -1155,9 +1155,11 @@ async function gerarPDF(e,op){
   const emissao=hoje(),ate=addDias(emissao,op.validade),brd=iso=>iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4);
   // cabeçalho
   rect(0,742,595,100,ROSA);rect(0,742,595,4,[.7,.07,.23]);
-  if(logo){cs+=`q 60 0 0 60 40 756 cm /Im1 Do Q\n`}
-  T(logo?112:40,52,'Mamãe de Açúcar',24,'F2',BR);
-  T(logo?112:40,70,'ORÇAMENTO DE ENCOMENDA',10,'F1',BR);
+  const lw=logo?60*logo.w/logo.h:0;
+  if(logo){cs+=`q ${lw.toFixed(2)} 0 0 60 40 756 cm /Im1 Do Q\n`}
+  const tx0=logo?40+lw+14:40;
+  T(tx0,52,'Mamãe de Açúcar',24,'F2',BR);
+  T(tx0,70,'ORÇAMENTO DE ENCOMENDA',10,'F1',BR);
   TR(555,48,'Nº '+String(e.orc).padStart(4,'0'),17,'F2',BR);
   TR(555,66,'Emitido em '+brd(emissao),9,'F1',BR);
   // cliente e entrega
