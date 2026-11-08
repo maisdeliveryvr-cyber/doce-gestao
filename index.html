@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#d6336c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Doce Gestão</title>
+<style>
+:root{--rosa:#d6336c;--rosa2:#fff0f5;--ok:#2f9e44;--alerta:#e67700;--ruim:#e03131;--txt:#2b2b2b;--mudo:#777;--borda:#eadde2}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#faf6f7;color:var(--txt);padding-bottom:84px}
+header{background:var(--rosa);color:#fff;padding:14px 16px;font-size:20px;font-weight:700;position:sticky;top:0;z-index:5}
+main{max-width:760px;margin:0 auto;padding:14px}
+h3{margin:18px 0 8px}
+.card{background:#fff;border:1px solid var(--borda);border-radius:14px;padding:12px;margin-bottom:10px}
+.card.alerta{border-color:var(--alerta);background:#fff9db}
+.card.ruim{border-color:var(--ruim);background:#fff5f5}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.muted{color:var(--mudo);font-size:14px}
+.tag{background:var(--rosa2);color:var(--rosa);border-radius:20px;padding:2px 10px;font-size:13px;font-weight:600;white-space:nowrap}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.num{font-size:22px;font-weight:700}
+button,.btn{font:inherit;border:1px solid var(--borda);background:#fff;border-radius:10px;padding:9px 12px;cursor:pointer;color:var(--txt);text-decoration:none;display:inline-block}
+button.p{background:var(--rosa);color:#fff;border-color:var(--rosa);font-weight:600}
+button.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+button.del{color:var(--ruim);border-color:var(--ruim)}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.big{width:100%;padding:13px;font-size:16px;margin:6px 0}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--borda);display:flex;z-index:6;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;border-radius:0;background:none;padding:10px 2px;font-size:12px;color:var(--mudo)}
+nav button span{display:block;font-size:22px}
+nav button.on{color:var(--rosa);font-weight:700}
+label{display:block;font-size:14px;color:var(--mudo);margin-top:10px}
+input,select,textarea{font:inherit;width:100%;padding:10px;border:1px solid #ccc;border-radius:10px;background:#fff}
+#modal{display:none;position:fixed;inset:0;background:#0007;z-index:10;overflow:auto}
+#modal.on{display:block}
+#modal .box{background:#fff;max-width:560px;margin:20px auto;border-radius:16px;padding:16px}
+.lin{display:grid;grid-template-columns:1fr 80px 28px 32px;gap:6px;align-items:center;margin-top:6px}
+.lin button.x{padding:6px;color:var(--ruim)}
+.preco{background:var(--rosa2);border-radius:12px;padding:12px;margin-top:12px}
+.preco .gd{font-size:26px;font-weight:800;color:var(--rosa)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cal b{font-size:12px;color:var(--mudo)}
+.dia{padding:8px 0;position:relative;border-radius:8px}
+.dia small{position:absolute;top:1px;right:4px;font-size:10px;font-weight:700}
+.dia.meio{background:#fff3bf}.dia.cheio{background:#ffc9c9}.dia.hoje{outline:2px solid var(--rosa)}
+.legenda{font-size:12px;color:var(--mudo);margin:6px 0 12px}
+.baixo{color:var(--ruim);font-weight:700}
+</style>
+</head>
+<body>
+<header>🍰 Doce Gestão</header>
+<main id="app"></main>
+<nav>
+  <button data-a="inicio" onclick="go('inicio')"><span>🏠</span>Início</button>
+  <button data-a="agenda" onclick="go('agenda')"><span>📅</span>Agenda</button>
+  <button data-a="receitas" onclick="go('receitas')"><span>💰</span>Preços</button>
+  <button data-a="estoque" onclick="go('estoque')"><span>📦</span>Estoque</button>
+  <button data-a="ajustes" onclick="go('ajustes')"><span>⚙️</span>Ajustes</button>
+</nav>
+<div id="modal" onclick="if(event.target===this)fechar()"></div>
+
+<script>
+/* ===== Dados ===== */
+const KEY='doce_gestao_v1';
+const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1},itens:[],receitas:[],encomendas:[]};
+let S=carregar();
+function carregar(){
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
+  return structuredClone(padrao);
+}
+function salvar(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('Não consegui guardar os dados neste navegador. Saia do modo anônimo ou libere o armazenamento.')}}
+
+/* ===== Utilidades ===== */
+const $=s=>document.querySelector(s);
+const v=id=>document.getElementById(id).value;
+const uid=()=>Math.random().toString(36).slice(2,10);
+const pad=n=>String(n).padStart(2,'0');
+const R=n=>(+n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const N=n=>(+n||0).toLocaleString('pt-BR',{maximumFractionDigits:2});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtISO=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const hoje=()=>fmtISO(new Date());
+const addDias=(iso,n)=>{const d=new Date(iso+'T12:00');d.setDate(d.getDate()+n);return fmtISO(d)};
+const dataBR=iso=>{const d=new Date(iso+'T12:00');return d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})};
+const cmp=(a,b)=>(a.data+(a.hora||'')).localeCompare(b.data+(b.hora||''));
+const ativas=()=>S.encomendas.filter(e=>e.status!=='cancelada');
+
+/* ===== Cálculo do preço ===== */
+function custo(r){
+  const c=S.config;let ing=0;
+  (r.ingredientes||[]).forEach(i=>{
+    const it=S.itens.find(x=>x.id===i.itemId);
+    if(it&&it.qtdPacote>0)ing+=i.qtd*it.preco/it.qtdPacote;
+  });
+  const perda=ing*c.perda/100;
+  const mao=(+r.minutos||0)/60*c.valorHora;
+  const fixo=c.bolosMes>0?c.custosFixosMes/c.bolosMes:0;
+  const total=ing+perda+mao+fixo;
+  const margem=(r.margem===''||r.margem==null)?c.margem:+r.margem;
+  const preco=total*(1+margem/100)/(1-c.taxa/100);
+  const lucro=preco-preco*c.taxa/100-total;
+  return{ing,perda,mao,fixo,total,margem,preco,lucro};
+}
+
+/* ===== Telas ===== */
+let aba='inicio',mes=new Date(),ed=null;
+function go(a){aba=a;render();scrollTo(0,0)}
+function render(){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.a===aba));
+  $('#app').innerHTML=({inicio:vInicio,agenda:vAgenda,receitas:vReceitas,estoque:vEstoque,ajustes:vAjustes})[aba]();
+}
+
+function cardEnc(e){
+  const r=S.receitas.find(x=>x.id===e.receitaId);
+  const nome=r?r.nome:(e.descricao||'Encomenda');
+  const atrasada=e.status==='pendente'&&e.data<hoje();
+  return`<div class="card ${atrasada?'ruim':''}">
+    <div class="row"><b>${esc(e.cliente)}</b><span class="tag">${dataBR(e.data)} ${esc(e.hora||'')}</span></div>
+    <div>${esc(nome)}${r&&e.descricao?' — '+esc(e.descricao):''}</div>
+    <div class="muted">${R(e.valor)} · sinal ${R(e.sinal)} · falta receber ${R(e.valor-e.sinal)}</div>
+    ${e.obs?`<div class="muted">📝 ${esc(e.obs)}</div>`:''}
+    ${atrasada?'<div class="baixo">Data já passou — marque como entregue ou edite.</div>':''}
+    <div class="btns">
+      ${e.status==='pendente'?`<button class="ok" onclick="entregar('${e.id}')">✔ Entregue</button><button onclick="ics('${e.id}')">🔔 Lembrete</button>`:`<span class="tag">${e.status}</span>`}
+      ${e.tel?`<a class="btn" target="_blank" href="https://wa.me/55${e.tel.replace(/\D/g,'')}">WhatsApp</a>`:''}
+      <button onclick="fEnc('${e.id}')">Editar</button>
+    </div></div>`;
+}
+
+function vInicio(){
+  const h=hoje(),am=addDias(h,1);
+  const pend=S.encomendas.filter(e=>e.status==='pendente').sort(cmp);
+  const hojeL=pend.filter(e=>e.data===h),amL=pend.filter(e=>e.data===am);
+  const prox=pend.filter(e=>e.data>am).slice(0,3);
+  const baixo=S.itens.filter(i=>i.estoque<=i.minimo);
+  const m=h.slice(0,7);
+  const fat=S.encomendas.filter(e=>e.status==='entregue'&&e.data.startsWith(m)).reduce((s,e)=>s+e.valor,0);
+  const receber=pend.reduce((s,e)=>s+(e.valor-e.sinal),0);
+  const vazio=!S.itens.length&&!S.receitas.length&&!S.encomendas.length;
+  return`
+  ${vazio?`<div class="card"><b>Bem-vinda! 👋</b><p>Comece cadastrando seus ingredientes na aba <b>Estoque</b>, depois monte suas receitas em <b>Preços</b>. Ou veja tudo funcionando com dados de exemplo:</p><button class="p big" onclick="exemplo()">Carregar exemplo</button></div>`:''}
+  <div class="grid">
+    <div class="card"><div class="muted">Vendido no mês</div><div class="num">${R(fat)}</div></div>
+    <div class="card"><div class="muted">A receber</div><div class="num">${R(receber)}</div></div>
+  </div>
+  <h3>🔔 Hoje</h3>${hojeL.map(cardEnc).join('')||'<div class="muted">Nenhuma entrega hoje.</div>'}
+  <h3>⏰ Amanhã</h3>${amL.map(cardEnc).join('')||'<div class="muted">Nenhuma entrega amanhã.</div>'}
+  ${prox.length?`<h3>Próximas</h3>${prox.map(cardEnc).join('')}`:''}
+  ${baixo.length?`<h3>⚠️ Comprar logo</h3><div class="card alerta">${baixo.map(i=>`<div class="row"><span>${esc(i.nome)}</span><span class="baixo">${N(i.estoque)} ${i.unidade}</span></div>`).join('')}</div>`:''}
+  <button class="p big" onclick="fEnc()">+ Nova encomenda</button>`;
+}
+
+function vAgenda(){
+  const y=mes.getFullYear(),m=mes.getMonth();
+  const primeiro=new Date(y,m,1).getDay(),dias=new Date(y,m+1,0).getDate();
+  const cont={};ativas().forEach(e=>cont[e.data]=(cont[e.data]||0)+1);
+  const lim=S.config.limiteDia;
+  let cel='';
+  for(let i=0;i<primeiro;i++)cel+='<i></i>';
+  for(let d=1;d<=dias;d++){
+    const iso=`${y}-${pad(m+1)}-${pad(d)}`,n=cont[iso]||0;
+    cel+=`<button class="dia ${n>=lim?'cheio':n?'meio':''} ${iso===hoje()?'hoje':''}" onclick="fEnc(null,'${iso}')">${d}${n?`<small>${n}</small>`:''}</button>`;
+  }
+  const pend=S.encomendas.filter(e=>e.status==='pendente').sort(cmp);
+  const hist=S.encomendas.filter(e=>e.status!=='pendente').sort(cmp).reverse().slice(0,10);
+  return`
+  <div class="row"><button onclick="mudaMes(-1)">◀</button><b>${mes.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</b><button onclick="mudaMes(1)">▶</button></div>
+  <div class="card" style="margin-top:10px"><div class="cal">${['D','S','T','Q','Q','S','S'].map(d=>`<b>${d}</b>`).join('')}${cel}</div>
+  <div class="legenda">🟨 tem encomenda · 🟥 dia cheio (limite: ${lim} por dia) · toque no dia para marcar</div></div>
+  <button class="p big" onclick="fEnc()">+ Nova encomenda</button>
+  <h3>Encomendas pendentes</h3>${pend.map(cardEnc).join('')||'<div class="muted">Nada marcado ainda.</div>'}
+  ${hist.length?`<h3>Histórico</h3>${hist.map(cardEnc).join('')}`:''}`;
+}
+function mudaMes(n){mes=new Date(mes.getFullYear(),mes.getMonth()+n,1);render()}
+
+function vReceitas(){
+  return`<button class="p big" onclick="fRec()">+ Nova receita / produto</button>
+  ${S.receitas.map(r=>{const c=custo(r);return`<div class="card" onclick="fRec('${r.id}')">
+    <div class="row"><b>${esc(r.nome)}</b><span class="tag">${r.rendimento} fatias</span></div>
+    <div class="muted">Custo ${R(c.total)} · lucro ${R(c.lucro)}</div>
+    <div class="row"><span class="muted">Preço sugerido</span><span class="num" style="color:var(--rosa)">${R(c.preco)}</span></div>
+    <div class="muted">${R(c.preco/(r.rendimento||1))} por fatia</div></div>`}).join('')||'<p class="muted">Nenhuma receita ainda. Cadastre antes os ingredientes no Estoque.</p>'}`;
+}
+
+function vEstoque(){
+  const bloco=(tipo,titulo)=>{
+    const l=S.itens.filter(i=>i.tipo===tipo).sort((a,b)=>a.nome.localeCompare(b.nome));
+    return`<h3>${titulo}</h3>${l.map(i=>`<div class="card ${i.estoque<=i.minimo?'alerta':''}">
+      <div class="row"><b>${esc(i.nome)}</b><span class="${i.estoque<=i.minimo?'baixo':''}">${N(i.estoque)} ${i.unidade}</span></div>
+      <div class="muted">${R(i.preco)} por pacote de ${N(i.qtdPacote)} ${i.unidade} · mínimo ${N(i.minimo)}</div>
+      <div class="btns"><button class="p" onclick="fCompra('${i.id}')">+ Comprei</button><button onclick="fItem('${i.id}')">Editar</button></div></div>`).join('')||'<div class="muted">Nada cadastrado.</div>'}`;
+  };
+  return`<button class="p big" onclick="fItem()">+ Novo item</button>${bloco('insumo','Ingredientes')}${bloco('embalagem','Embalagens')}`;
+}
+
+function vAjustes(){
+  const c=S.config;
+  const f=(id,l,val,dica)=>`<label>${l}</label><input id="${id}" type="number" step="any" inputmode="decimal" value="${val}">${dica?`<div class="muted">${dica}</div>`:''}`;
+  return`<div class="card"><b>Como o preço é calculado</b>
+  ${f('c_hora','Quanto vale a sua hora de trabalho (R$)',c.valorHora,'Quanto você quer ganhar por hora.')}
+  ${f('c_fixo','Gastos fixos por mês (R$)',c.custosFixosMes,'Gás, luz, água, internet, aluguel, etc.')}
+  ${f('c_bolos','Quantos bolos faz por mês (média)',c.bolosMes,'Os gastos fixos são divididos por esse número.')}
+  ${f('c_perda','Perdas e desperdício (%)',c.perda,'Sobra na tigela, bolo que deu errado... 5% é comum.')}
+  ${f('c_margem','Margem de lucro padrão (%)',c.margem,'100% = o preço é o dobro do custo.')}
+  ${f('c_taxa','Taxa da maquininha / app (%)',c.taxa,'0 se receber só em Pix ou dinheiro.')}
+  ${f('c_lim','Máximo de encomendas por dia',c.limiteDia,'O sistema avisa quando passar disso.')}
+  <button class="p big" onclick="salvarConfig()">Salvar</button></div>
+  <div class="card"><b>Avisos e segurança</b>
+  <button class="big" onclick="avisos()">🔔 Ativar avisos neste aparelho</button>
+  <button class="big" onclick="backup()">💾 Baixar cópia de segurança</button>
+  <label>Restaurar cópia de segurança</label><input type="file" accept=".json" onchange="restaurar(this.files[0])">
+  <p class="muted">Seus dados ficam guardados neste aparelho. Faça a cópia de segurança de vez em quando.</p></div>`;
+}
+function salvarConfig(){
+  const g=id=>+v(id)||0;
+  S.config={valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(1,g('c_lim'))};
+  salvar();alert('Salvo!');render();
+}
+
+/* ===== Janela de formulário ===== */
+function modal(h){const m=$('#modal');m.innerHTML=`<div class="box">${h}</div>`;m.classList.add('on')}
+function fechar(){$('#modal').classList.remove('on');$('#modal').innerHTML=''}
+const campo=(id,l,tipo,val,ex='')=>`<label>${l}</label><input id="${id}" type="${tipo}" ${tipo==='number'?'step="any" inputmode="decimal"':''} value="${esc(val)}" ${ex}>`;
+const sel=(id,l,ops,val,ex='')=>`<label>${l}</label><select id="${id}" ${ex}>${ops.map(([k,t])=>`<option value="${esc(k)}" ${k===val?'selected':''}>${esc(t)}</option>`).join('')}</select>`;
+
+/* --- Item de estoque --- */
+function fItem(id){
+  const i=id?S.itens.find(x=>x.id===id):{nome:'',tipo:'insumo',unidade:'g',preco:'',qtdPacote:'',estoque:0,minimo:0};
+  modal(`<h3>${id?'Editar':'Novo'} item</h3>
+  ${campo('i_nome','Nome (ex: Farinha de trigo)','text',i.nome)}
+  ${sel('i_tipo','Tipo',[['insumo','Ingrediente'],['embalagem','Embalagem']],i.tipo)}
+  ${sel('i_un','Medida',[['g','gramas (g)'],['ml','mililitros (ml)'],['un','unidades (un)']],i.unidade)}
+  ${campo('i_preco','Quanto paguei no pacote (R$)','number',i.preco)}
+  ${campo('i_pac','Quanto vem no pacote (em g, ml ou un)','number',i.qtdPacote)}
+  <div class="muted">Ex: pacote de 1 kg = 1000 · caixa com 30 ovos = 30 · lata de 395 g = 395</div>
+  ${campo('i_est','Quanto tenho agora','number',i.estoque)}
+  ${campo('i_min','Avisar quando tiver menos de','number',i.minimo)}
+  <div class="btns"><button class="p" onclick="salvarItem('${id||''}')">Salvar</button><button onclick="fechar()">Cancelar</button>${id?`<button class="del" onclick="apagarItem('${id}')">Apagar</button>`:''}</div>`);
+}
+function salvarItem(id){
+  const o={nome:v('i_nome').trim(),tipo:v('i_tipo'),unidade:v('i_un'),preco:+v('i_preco')||0,qtdPacote:+v('i_pac')||0,estoque:+v('i_est')||0,minimo:+v('i_min')||0};
+  if(!o.nome||o.qtdPacote<=0)return alert('Preencha o nome e quanto vem no pacote.');
+  if(id)Object.assign(S.itens.find(x=>x.id===id),o);else S.itens.push({id:uid(),...o});
+  salvar();fechar();render();
+}
+function apagarItem(id){
+  const uso=S.receitas.filter(r=>r.ingredientes.some(i=>i.itemId===id));
+  if(!confirm(uso.length?`Este item é usado em: ${uso.map(r=>r.nome).join(', ')}. Apagar mesmo?`:'Apagar este item?'))return;
+  S.itens=S.itens.filter(x=>x.id!==id);
+  S.receitas.forEach(r=>r.ingredientes=r.ingredientes.filter(i=>i.itemId!==id));
+  salvar();fechar();render();
+}
+function fCompra(id){
+  const i=S.itens.find(x=>x.id===id);
+  modal(`<h3>Comprei: ${esc(i.nome)}</h3>
+  ${campo('b_n','Quantos pacotes comprei','number',1)}
+  ${campo('b_p','Preço de cada pacote (R$)','number',i.preco)}
+  <div class="muted">O preço novo atualiza o cálculo das suas receitas.</div>
+  <div class="btns"><button class="p" onclick="salvarCompra('${id}')">Salvar</button><button onclick="fechar()">Cancelar</button></div>`);
+}
+function salvarCompra(id){
+  const i=S.itens.find(x=>x.id===id),n=+v('b_n')||0,p=+v('b_p')||0;
+  if(n<=0)return alert('Informe quantos pacotes.');
+  i.estoque+=n*i.qtdPacote;if(p>0)i.preco=p;
+  salvar();fechar();render();
+}
+
+/* --- Receita --- */
+function fRec(id){
+  const r=id?S.receitas.find(x=>x.id===id):{nome:'',rendimento:10,minutos:60,margem:'',ingredientes:[]};
+  if(!S.itens.length)return alert('Cadastre primeiro os ingredientes na aba Estoque.');
+  ed={id,rows:r.ingredientes.map(x=>({...x}))};
+  modal(`<h3>${id?'Editar':'Nova'} receita</h3>
+  ${campo('r_nome','Nome (ex: Bolo de chocolate 2kg)','text',r.nome)}
+  ${campo('r_rend','Quantas fatias/porções rende','number',r.rendimento,'oninput="prev()"')}
+  ${campo('r_min','Tempo total de trabalho (minutos)','number',r.minutos,'oninput="prev()"')}
+  ${campo('r_margem','Margem de lucro % (deixe vazio para usar a padrão)','number',r.margem,'oninput="prev()"')}
+  <label>Ingredientes e embalagens usados</label><div id="rows"></div>
+  <button style="margin-top:8px" onclick="rowAdd()">+ Adicionar ingrediente</button>
+  <div id="prev" class="preco"></div>
+  <div class="btns"><button class="p" onclick="salvarRec()">Salvar</button><button onclick="fechar()">Cancelar</button>${id?`<button class="del" onclick="apagarRec('${id}')">Apagar</button>`:''}</div>`);
+  rowsDraw();prev();
+}
+function rowsDraw(){
+  $('#rows').innerHTML=ed.rows.map((r,i)=>{
+    const it=S.itens.find(x=>x.id===r.itemId);
+    return`<div class="lin"><select onchange="rowSel(${i},this.value)"><option value="">Escolha...</option>${S.itens.map(x=>`<option value="${x.id}" ${x.id===r.itemId?'selected':''}>${esc(x.nome)}</option>`).join('')}</select>
+    <input type="number" step="any" inputmode="decimal" value="${r.qtd||''}" placeholder="qtd" oninput="rowQtd(${i},this.value)"><span>${it?it.unidade:''}</span><button class="x" onclick="rowDel(${i})">✕</button></div>`;
+  }).join('');
+}
+function rowAdd(){ed.rows.push({itemId:'',qtd:0});rowsDraw()}
+function rowSel(i,val){ed.rows[i].itemId=val;rowsDraw();prev()}
+function rowQtd(i,val){ed.rows[i].qtd=+val||0;prev()}
+function rowDel(i){ed.rows.splice(i,1);rowsDraw();prev()}
+function tmpRec(){return{minutos:+v('r_min')||0,margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)}}
+function prev(){
+  const c=custo(tmpRec()),rend=+v('r_rend')||1;
+  $('#prev').innerHTML=`<div class="row"><span>Ingredientes</span><b>${R(c.ing)}</b></div>
+  <div class="row"><span>Perdas</span><b>${R(c.perda)}</b></div>
+  <div class="row"><span>Seu trabalho</span><b>${R(c.mao)}</b></div>
+  <div class="row"><span>Gastos fixos (gás, luz...)</span><b>${R(c.fixo)}</b></div>
+  <div class="row"><span>Custo total</span><b>${R(c.total)}</b></div><hr>
+  <div class="muted">Preço sugerido (lucro de ${N(c.margem)}%)</div><div class="gd">${R(c.preco)}</div>
+  <div class="muted">${R(c.preco/rend)} por fatia · você ganha ${R(c.lucro)} limpo</div>`;
+}
+function salvarRec(){
+  const nome=v('r_nome').trim();if(!nome)return alert('Dê um nome para a receita.');
+  const o={nome,rendimento:+v('r_rend')||1,minutos:+v('r_min')||0,margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)};
+  if(ed.id)Object.assign(S.receitas.find(x=>x.id===ed.id),o);else S.receitas.push({id:uid(),...o});
+  salvar();fechar();render();
+}
+function apagarRec(id){if(!confirm('Apagar esta receita?'))return;S.receitas=S.receitas.filter(x=>x.id!==id);salvar();fechar();render()}
+
+/* --- Encomenda --- */
+function fEnc(id,dataPre){
+  const e=id?S.encomendas.find(x=>x.id===id):{cliente:'',tel:'',receitaId:'',descricao:'',data:dataPre||hoje(),hora:'',valor:'',sinal:0,obs:''};
+  modal(`<h3>${id?'Editar':'Nova'} encomenda</h3>
+  ${campo('e_cli','Nome da cliente','text',e.cliente)}
+  ${campo('e_tel','WhatsApp (com DDD)','tel',e.tel)}
+  ${sel('e_rec','Produto',[['','Outro / personalizado'],...S.receitas.map(r=>[r.id,r.nome])],e.receitaId,'onchange="escolheProd()"')}
+  ${campo('e_desc','Detalhes (sabor, tema, escrita no bolo...)','text',e.descricao)}
+  ${campo('e_data','Data da entrega','date',e.data)}
+  ${campo('e_hora','Hora','time',e.hora)}
+  ${campo('e_valor','Valor combinado (R$)','number',e.valor)}
+  ${campo('e_sinal','Sinal já pago (R$)','number',e.sinal)}
+  ${campo('e_obs','Observações','text',e.obs)}
+  <div class="btns"><button class="p" onclick="salvarEnc('${id||''}')">Salvar</button><button onclick="fechar()">Cancelar</button>
+  ${id?`<button class="del" onclick="cancelarEnc('${id}')">Cancelar pedido</button>`:''}</div>`);
+}
+function escolheProd(){
+  const r=S.receitas.find(x=>x.id===v('e_rec'));
+  if(r&&!+v('e_valor'))$('#e_valor').value=custo(r).preco.toFixed(2);
+}
+function salvarEnc(id){
+  const o={cliente:v('e_cli').trim(),tel:v('e_tel').trim(),receitaId:v('e_rec'),descricao:v('e_desc').trim(),data:v('e_data'),hora:v('e_hora'),valor:+v('e_valor')||0,sinal:+v('e_sinal')||0,obs:v('e_obs').trim()};
+  if(!o.cliente||!o.data)return alert('Preencha o nome da cliente e a data.');
+  const mesmoDia=ativas().filter(x=>x.data===o.data&&x.id!==id);
+  if(mesmoDia.length>=S.config.limiteDia){
+    const quem=mesmoDia.map(x=>x.cliente).join(', ');
+    if(!confirm(`⚠️ Já existe encomenda nesse dia (${quem}). O limite é ${S.config.limiteDia} por dia.\n\nMarcar mesmo assim?`))return;
+  }
+  if(id)Object.assign(S.encomendas.find(x=>x.id===id),o);else S.encomendas.push({id:uid(),status:'pendente',baixa:false,...o});
+  salvar();fechar();render();
+}
+function cancelarEnc(id){if(!confirm('Cancelar este pedido? Ele sai da agenda.'))return;S.encomendas.find(x=>x.id===id).status='cancelada';salvar();fechar();render()}
+function entregar(id){
+  const e=S.encomendas.find(x=>x.id===id),r=S.receitas.find(x=>x.id===e.receitaId);
+  let msg='Marcar como entregue?';
+  if(r&&!e.baixa)msg+='\n\nO estoque será reduzido com os ingredientes de "'+r.nome+'".';
+  if(!confirm(msg))return;
+  if(r&&!e.baixa){r.ingredientes.forEach(i=>{const it=S.itens.find(x=>x.id===i.itemId);if(it)it.estoque=Math.max(0,it.estoque-i.qtd)});e.baixa=true}
+  e.status='entregue';salvar();render();
+}
+
+/* ===== Lembretes ===== */
+function baixar(nome,texto,tipo){
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([texto],{type:tipo}));a.download=nome;document.body.appendChild(a);a.click();a.remove();
+}
+function ics(id){
+  const e=S.encomendas.find(x=>x.id===id),r=S.receitas.find(x=>x.id===e.receitaId);
+  const t=e.data.replace(/-/g,''),tx=s=>String(s).replace(/[\\;,]/g,'\\$&').replace(/\n/g,'\\n');
+  const dt=e.hora?`DTSTART:${t}T${e.hora.replace(':','')}00\r\nDTEND:${t}T${pad(Math.min(23,+e.hora.slice(0,2)+1))}${e.hora.slice(3,5)}00`
+    :`DTSTART;VALUE=DATE:${t}\r\nDTEND;VALUE=DATE:${addDias(e.data,1).replace(/-/g,'')}`;
+  const nome=`Entrega: ${e.cliente} - ${r?r.nome:(e.descricao||'encomenda')}`;
+  const txt=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//DoceGestao//PT','BEGIN:VEVENT',`UID:${e.id}@docegestao`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').slice(0,15)}Z`,dt,`SUMMARY:${tx(nome)}`,
+    `DESCRIPTION:${tx((e.descricao||'')+(e.obs?' | '+e.obs:'')+' | Falta receber '+R(e.valor-e.sinal))}`,
+    'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY','DESCRIPTION:Amanhã tem entrega!','END:VALARM',
+    'BEGIN:VALARM','TRIGGER:-PT3H','ACTION:DISPLAY','DESCRIPTION:Entrega em 3 horas','END:VALARM',
+    'END:VEVENT','END:VCALENDAR'].join('\r\n');
+  baixar('entrega-'+e.cliente.replace(/\W+/g,'-')+'.ics',txt,'text/calendar');
+  alert('Abra o arquivo baixado para salvar no calendário do celular. Ele vai avisar 1 dia antes e 3 horas antes.');
+}
+async function avisos(){
+  if(!('Notification' in window))return alert('Este aparelho não permite avisos pelo navegador. Use o botão "Lembrete" de cada encomenda.');
+  const p=await Notification.requestPermission();
+  if(p==='granted'){notificar(true);alert('Avisos ativados! Você será avisada ao abrir o app.')}
+}
+function notificar(forca){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  const h=hoje(),am=addDias(h,1);
+  try{if(!forca&&localStorage.getItem('ult_aviso')===h)return}catch(e){}
+  const p=S.encomendas.filter(e=>e.status==='pendente');
+  const a=p.filter(e=>e.data===h),b=p.filter(e=>e.data===am);
+  const partes=[];
+  if(a.length)partes.push('HOJE: '+a.map(e=>e.cliente).join(', '));
+  if(b.length)partes.push('AMANHÃ: '+b.map(e=>e.cliente).join(', '));
+  if(!partes.length&&!forca)return;
+  const corpo=partes.join(' · ')||'Sem entregas hoje ou amanhã.';
+  try{localStorage.setItem('ult_aviso',h)}catch(e){}
+  if(navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(r=>r.showNotification('🍰 Doce Gestão',{body:corpo,icon:'icon-192.png'}));
+  else new Notification('🍰 Doce Gestão',{body:corpo});
+}
+
+/* ===== Cópia de segurança e exemplo ===== */
+function backup(){baixar('doce-gestao-'+hoje()+'.json',JSON.stringify(S,null,1),'application/json')}
+function restaurar(f){
+  if(!f)return;const rd=new FileReader();
+  rd.onload=()=>{try{const d=JSON.parse(rd.result);if(!d.itens||!d.receitas||!d.encomendas)throw 0;
+    if(!confirm('Isso substitui TODOS os dados atuais. Continuar?'))return;
+    S={...structuredClone(padrao),...d,config:{...padrao.config,...d.config}};salvar();render();alert('Dados restaurados!')}
+    catch(e){alert('Arquivo inválido.')}};
+  rd.readAsText(f);
+}
+function exemplo(){
+  const I=(nome,tipo,un,preco,pac,est,min)=>({id:uid(),nome,tipo,unidade:un,preco,qtdPacote:pac,estoque:est,minimo:min});
+  const fa=I('Farinha de trigo','insumo','g',5.5,1000,3000,1000),ac=I('Açúcar','insumo','g',4.5,1000,2000,1000),
+    ov=I('Ovos','insumo','un',18,30,24,6),ch=I('Chocolate em pó','insumo','g',12,200,300,100),
+    lc=I('Leite condensado','insumo','g',7,395,800,395),cx=I('Caixa de bolo','embalagem','un',4,1,5,3);
+  S.itens=[fa,ac,ov,ch,lc,cx];
+  S.receitas=[{id:uid(),nome:'Bolo de chocolate 2kg',rendimento:16,minutos:120,margem:'',ingredientes:[{itemId:fa.id,qtd:400},{itemId:ac.id,qtd:300},{itemId:ov.id,qtd:5},{itemId:ch.id,qtd:100},{itemId:lc.id,qtd:790},{itemId:cx.id,qtd:1}]}];
+  S.encomendas=[{id:uid(),cliente:'Maria (exemplo)',tel:'',receitaId:S.receitas[0].id,descricao:'Parabéns Ana',data:addDias(hoje(),1),hora:'15:00',valor:180,sinal:50,obs:'',status:'pendente',baixa:false}];
+  salvar();render();
+}
+
+/* ===== Início ===== */
+render();
+notificar(false);
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
