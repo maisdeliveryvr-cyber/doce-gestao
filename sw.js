@@ -1,4 +1,4 @@
-const C = 'mamae-acucar-v2';
+const C = 'mamae-acucar-v3';
 const ARQ = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png', 'logo.png'];
 
 self.addEventListener('install', e => {

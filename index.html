@@ -209,7 +209,7 @@ const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
 const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,orcValidade:7,orcContato:'',orcTermos:'',meiOn:false,meiAbertura:'',meiDAS:82.05,proLabore:0,cliMeta:5,cliBeneficio:'',cliRecompra:60,validAviso:7,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],orcSeq:0,meiPagos:{},clientes:[],cliV:0,lotes:[],perdas:[],seedV:0,ultBackup:''};
 const clone=o=>JSON.parse(JSON.stringify(o)); // compatível com iPhones e Androids mais antigos
-const VERSAO='1.0 · 08/11/2026';
+const VERSAO='1.1 · 08/11/2026';
 let S=carregar();
 function carregar(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...clone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
