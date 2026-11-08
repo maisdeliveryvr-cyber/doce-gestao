@@ -109,6 +109,9 @@ input:focus,select:focus{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(227,
 .chips button{padding:7px 12px;font-size:13px}
 .dica{display:flex;gap:10px;align-items:flex-start;background:rgba(255,255,255,.6);border:1px dashed rgba(227,72,95,.35);border-radius:16px;padding:12px;font-size:13.5px;color:var(--mudo);margin-bottom:12px}
 .dica .i{color:var(--rosa);margin-top:2px}
+.qr{background:#fff;padding:10px;border-radius:18px;max-width:260px;margin:12px auto;box-shadow:0 1px 0 #fff inset,0 14px 28px -14px rgba(179,18,58,.5);border:1px solid var(--borda)}
+.qr svg{display:block;width:100%;height:auto}
+textarea{min-height:90px;resize:vertical;font-size:13px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -147,7 +150,11 @@ const IC={
   tag:'<path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.3"/>',
   wallet:'<path d="M4 7a2 2 0 0 1 2-2h12v4"/><rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="16.5" cy="13.5" r="1.2"/>',
   shield:'<path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5L15.5 10"/>',
-  cake:'<path d="M4 20h16M5 20v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M5 15.5c2 1.5 3.5 1.5 5 0s3-1.5 5 0 2.5 1 4 0M12 12V8M12 5.2c.8-.9.8-1.6 0-2.4-.8.8-.8 1.5 0 2.4z"/>'
+  cake:'<path d="M4 20h16M5 20v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M5 15.5c2 1.5 3.5 1.5 5 0s3-1.5 5 0 2.5 1 4 0M12 12V8M12 5.2c.8-.9.8-1.6 0-2.4-.8.8-.8 1.5 0 2.4z"/>',
+  pix:'<path d="M12 3l9 9-9 9-9-9 9-9z"/><path d="M9 12l3-3 3 3-3 3-3-3z"/>',
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
+  share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.9l7.6-3.8M8.2 13.1l7.6 3.8"/>',
+  msg:'<path d="M4 5h16v11H9l-5 4V5z"/><path d="M8 9.5h8M8 12.5h5"/>'
 };
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${IC[n]||''}</svg>`;
 
@@ -172,13 +179,20 @@ const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces
 
 /* ===== Dados ===== */
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
-const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1},itens:[],receitas:[],encomendas:[],cotacoes:[],seedV:0};
+const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],seedV:0,ultBackup:''};
 let S=carregar();
 function carregar(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
   return structuredClone(padrao);
 }
-function salvar(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('Não consegui guardar os dados neste navegador. Saia do modo anônimo ou libere o armazenamento.')}}
+let pronto=false,persistido=null,recuperado=false;
+function salvar(){
+  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('Não consegui guardar os dados neste navegador. Saia do modo anônimo ou libere o armazenamento.')}
+  if(pronto)idbSet(JSON.stringify(S)); // segunda cópia interna (IndexedDB)
+}
+const idb=()=>new Promise((ok,no)=>{const r=indexedDB.open('mamae_acucar',1);r.onupgradeneeded=()=>r.result.createObjectStore('k');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+async function idbSet(t){try{const d=await idb();d.transaction('k','readwrite').objectStore('k').put(t,'S')}catch(e){}}
+async function idbGet(){try{const d=await idb();return await new Promise(ok=>{const q=d.transaction('k').objectStore('k').get('S');q.onsuccess=()=>ok(q.result);q.onerror=()=>ok(null)})}catch(e){return null}}
 function basicos(){
   const tem=new Set(S.itens.map(i=>i.nome.toLowerCase()));let n=0;
   BASICOS.forEach(([nome,tipo,un,preco,pac])=>{if(tem.has(nome.toLowerCase()))return;S.itens.push({id:uid(),nome,tipo,unidade:un,preco,qtdPacote:pac,estoque:0,minimo:0,ref:true});n++});
@@ -244,8 +258,8 @@ function cardEnc(e){
     ${e.obs?`<div class="muted">${esc(e.obs)}</div>`:''}
     ${atrasada?`<div class="baixo" style="margin-top:6px">${ic('warn',16)} Data já passou — marque como entregue ou edite.</div>`:''}
     <div class="btns">
-      ${e.status==='pendente'?`<button class="ok" onclick="entregar('${e.id}')">${ic('check',18)} Entregue</button><button onclick="ics('${e.id}')">${ic('bell',18)} Lembrete</button>`:`<span class="tag">${e.status}</span>`}
-      ${e.tel?`<a class="btn" target="_blank" rel="noopener" href="https://wa.me/55${e.tel.replace(/\D/g,'')}">${ic('chat',18)} WhatsApp</a>`:''}
+      ${e.status==='pendente'?`<button class="ok" onclick="entregar('${e.id}')">${ic('check',18)} Entregue</button><button onclick="fPix('${e.id}')">${ic('pix',18)} Pix</button><button onclick="ics('${e.id}')">${ic('bell',18)} Lembrete</button>`:`<span class="tag">${e.status}</span>`}
+      <button onclick="fMsg('${e.id}')">${ic('chat',18)} Mensagem</button>
       <button onclick="fEnc('${e.id}')">${ic('edit',18)} Editar</button>
     </div></div>`;
 }
@@ -262,6 +276,7 @@ function vInicio(){
   const vazio=!S.receitas.length&&!S.encomendas.length;
   return`
   ${vazio?`<div class="card"><b>Bem-vinda! ${ic('spark',18)}</b><p class="muted" style="font-size:14.5px">Seu estoque já veio com os ingredientes e embalagens mais usados na confeitaria, com preços de referência. Ajuste os preços em <b>Estoque</b>, monte suas receitas em <b>Preços</b> e compare mercados na aba <b>Mercado</b>. Ou veja tudo funcionando com um exemplo:</p><button class="p big" onclick="exemplo()">${ic('spark',18)} Carregar exemplo</button></div>`:''}
+  ${precisaBackup()?`<div class="card alerta"><b>${ic('shield',18)} Faça sua cópia de segurança</b><p class="muted" style="font-size:14px">${S.ultBackup?'Sua última cópia foi em '+diaMes(S.ultBackup)+'.':'Você ainda não fez nenhuma cópia.'} Envie para o seu WhatsApp, e-mail ou Drive para nunca perder seus dados.</p><button class="p big" onclick="backup(true)">${ic('share',18)} Enviar cópia agora</button></div>`:''}
   <div class="grid">
     <div class="stat forte"><span class="ico">${ic('wallet')}</span><div class="muted">Vendido no mês</div><div class="num">${R(fat)}</div></div>
     <div class="stat"><span class="ico">${ic('coin')}</span><div class="muted">A receber</div><div class="num">${R(receber)}</div></div>
@@ -392,15 +407,29 @@ function vAjustes(){
   ${f('c_taxa','Taxa da maquininha / app (%)',c.taxa,'0 se receber só em Pix ou dinheiro.')}
   ${f('c_lim','Máximo de encomendas por dia',c.limiteDia,'O sistema avisa quando passar disso.')}
   <button class="p big" onclick="salvarConfig()">Salvar</button></div>
-  <div class="card"><b>${ic('shield',20)} Avisos e segurança</b>
+  <div class="card"><b>${ic('pix',20)} Pix e cobrança do sinal</b>
+  <div class="muted">Cadastre sua chave uma vez. Em cada encomenda, o botão Pix gera o QR code e o “copia e cola” com o valor certo.</div>
+  ${sel('x_tipo','Tipo da chave Pix',[['cpf','CPF ou CNPJ'],['cel','Celular'],['email','E-mail'],['aleatoria','Chave aleatória']],c.pixTipo)}
+  ${campo('x_chave','Sua chave Pix','text',c.pixChave,'autocomplete="off"')}
+  ${campo('x_nome','Nome que aparece para quem paga (até 25 letras)','text',c.pixNome)}
+  ${campo('x_cidade','Cidade (até 15 letras)','text',c.pixCidade)}
+  ${campo('x_pct','Sinal para reservar a data (%)','number',c.sinalPct)}
+  <button class="p big" onclick="salvarPix()">Salvar Pix</button></div>
+  <div class="card"><b>${ic('chat',20)} Mensagens prontas de WhatsApp</b>
+  <div class="muted">Use {cliente} {produto} {data} {horaTxt} {valor} {sinal} {saldo} {sinalDevido} {sinalPct} {pix} para preencher sozinho.</div>
+  ${MSGS.map(([k,t,d])=>`<label>${t}</label><textarea id="m_${k}">${esc(msgTxt(k))}</textarea>`).join('')}
+  <div class="btns"><button class="p" onclick="salvarMsgs()">Salvar mensagens</button><button onclick="restMsgs()">Voltar ao padrão</button></div></div>
+  <div class="card"><b>${ic('shield',20)} Cópia de segurança e avisos</b>
+  <div class="muted">Última cópia: <b>${S.ultBackup?diaMes(S.ultBackup)+'/'+S.ultBackup.slice(0,4):'nenhuma ainda'}</b> · Proteção do navegador: <b>${persistido===true?'ativa':persistido===false?'não garantida':'verificando'}</b></div>
+  <button class="p big" onclick="backup(true)">${ic('share',18)} Enviar cópia (WhatsApp, e-mail, Drive)</button>
+  <button class="big" onclick="backup(false)">${ic('down',18)} Baixar cópia no aparelho</button>
   <button class="big" onclick="avisos()">${ic('bell',18)} Ativar avisos neste aparelho</button>
-  <button class="big" onclick="backup()">${ic('down',18)} Baixar cópia de segurança</button>
   <label>Restaurar cópia de segurança</label><input type="file" accept=".json" onchange="restaurar(this.files[0])">
-  <p class="muted">Seus dados ficam guardados neste aparelho. Faça a cópia de segurança de vez em quando. Para levar os dados para outro aparelho, baixe a cópia aqui e restaure lá.</p></div>`;
+  <p class="muted">Seus dados ficam neste aparelho, com uma segunda cópia interna no navegador. Mesmo assim, envie a cópia para fora do aparelho de vez em quando. Para levar os dados para outro aparelho (celular e computador), envie a cópia aqui e restaure lá.</p></div>`;
 }
 function salvarConfig(){
   const g=id=>+v(id)||0;
-  S.config={valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(1,g('c_lim'))};
+  S.config={...S.config,valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(1,g('c_lim'))};
   salvar();alert('Salvo!');render();
 }
 
@@ -581,8 +610,200 @@ function notificar(forca){
   else new Notification('Mamãe de Açúcar',{body:corpo});
 }
 
+/* ===== QR Code (gerador próprio, correção de erro M, versões 1 a 10, funciona offline) ===== */
+const QR=(()=>{
+  const DAT=[0,16,28,44,64,86,108,124,154,182,216],ECB=[0,10,16,26,18,24,16,18,22,22,26],NB=[0,1,1,1,2,2,4,4,4,5,5];
+  const ALN=[[],[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
+  const mul=(x,y)=>{let z=0;for(let i=7;i>=0;i--){z=(z<<1)^((z>>>7)*0x11D);z^=((y>>>i)&1)*x}return z};
+  function rs(data,deg){
+    const dv=new Array(deg).fill(0);dv[deg-1]=1;let root=1;
+    for(let i=0;i<deg;i++){for(let j=0;j<deg;j++){dv[j]=mul(dv[j],root);if(j+1<deg)dv[j]^=dv[j+1]}root=mul(root,2)}
+    const r=new Array(deg).fill(0);
+    for(const b of data){const f=b^r.shift();r.push(0);dv.forEach((c,i)=>r[i]^=mul(c,f))}
+    return r;
+  }
+  const bit=(x,i)=>((x>>>i)&1)!==0;
+  function make(text){
+    const bytes=[...new TextEncoder().encode(text)];
+    let ver=0;
+    for(let v=1;v<=10;v++){if(bytes.length<=Math.floor((DAT[v]*8-(v<10?12:20))/8)){ver=v;break}}
+    if(!ver)throw new Error('Texto grande demais para o QR code');
+    const bits=[],put=(val,len)=>{for(let i=len-1;i>=0;i--)bits.push((val>>>i)&1)};
+    put(4,4);put(bytes.length,ver<10?8:16);bytes.forEach(b=>put(b,8));
+    const cap=DAT[ver]*8;put(0,Math.min(4,cap-bits.length));while(bits.length%8)bits.push(0);
+    for(let p=0xEC;bits.length<cap;p^=0xEC^0x11)put(p,8);
+    const cw=[];for(let i=0;i<bits.length;i+=8){let b=0;for(let j=0;j<8;j++)b=(b<<1)|bits[i+j];cw.push(b)}
+    // blocos + correção de erros
+    const n=NB[ver],curto=Math.floor(DAT[ver]/n),nLongos=DAT[ver]%n,blocos=[],ecs=[];let k=0;
+    for(let i=0;i<n;i++){const len=curto+(i>=n-nLongos?1:0);const d=cw.slice(k,k+len);k+=len;blocos.push(d);ecs.push(rs(d,ECB[ver]))}
+    const fin=[];for(let i=0;i<=curto;i++)blocos.forEach(b=>{if(i<b.length)fin.push(b[i])});
+    for(let i=0;i<ECB[ver];i++)ecs.forEach(e=>fin.push(e[i]));
+    // matriz
+    const size=17+4*ver,M=Array.from({length:size},()=>new Array(size).fill(false)),F=Array.from({length:size},()=>new Array(size).fill(false));
+    const setF=(x,y,c)=>{M[y][x]=c;F[y][x]=true};
+    for(let i=0;i<size;i++){setF(6,i,i%2===0);setF(i,6,i%2===0)}
+    const finder=(cx,cy)=>{for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){const d=Math.max(Math.abs(dx),Math.abs(dy)),x=cx+dx,y=cy+dy;if(x>=0&&x<size&&y>=0&&y<size)setF(x,y,d!==2&&d!==4)}};
+    finder(3,3);finder(size-4,3);finder(3,size-4);
+    const al=ALN[ver],na=al.length;
+    for(let i=0;i<na;i++)for(let j=0;j<na;j++){if((i===0&&j===0)||(i===0&&j===na-1)||(i===na-1&&j===0))continue;
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)setF(al[i]+dx,al[j]+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1)}
+    const fmt=m=>{const d=0<<3|m;let r=d;for(let i=0;i<10;i++)r=(r<<1)^((r>>>9)*0x537);const b=(d<<10|r)^0x5412;
+      for(let i=0;i<=5;i++)setF(8,i,bit(b,i));setF(8,7,bit(b,6));setF(8,8,bit(b,7));setF(7,8,bit(b,8));for(let i=9;i<15;i++)setF(14-i,8,bit(b,i));
+      for(let i=0;i<8;i++)setF(size-1-i,8,bit(b,i));for(let i=8;i<15;i++)setF(8,size-15+i,bit(b,i));setF(8,size-8,true)};
+    fmt(0);
+    if(ver>=7){let r=ver;for(let i=0;i<12;i++)r=(r<<1)^((r>>>11)*0x1F25);const b=ver<<12|r;
+      for(let i=0;i<18;i++){const c=bit(b,i),a=size-11+i%3,bb=Math.floor(i/3);setF(a,bb,c);setF(bb,a,c)}}
+    // dados em zigue-zague
+    let idx=0;
+    for(let right=size-1;right>=1;right-=2){if(right===6)right=5;
+      for(let vert=0;vert<size;vert++)for(let j=0;j<2;j++){const x=right-j,up=((right+1)&2)===0,y=up?size-1-vert:vert;
+        if(!F[y][x]&&idx<fin.length*8){M[y][x]=bit(fin[idx>>>3],7-(idx&7));idx++}}}
+    const cond=[(x,y)=>(x+y)%2===0,(x,y)=>y%2===0,(x,y)=>x%3===0,(x,y)=>(x+y)%3===0,(x,y)=>(Math.floor(x/3)+Math.floor(y/2))%2===0,(x,y)=>x*y%2+x*y%3===0,(x,y)=>(x*y%2+x*y%3)%2===0,(x,y)=>((x+y)%2+x*y%3)%2===0];
+    const aplica=m=>{for(let y=0;y<size;y++)for(let x=0;x<size;x++)if(!F[y][x]&&cond[m](x,y))M[y][x]=!M[y][x]};
+    const pena=()=>{let p=0,dark=0;
+      for(let t=0;t<2;t++)for(let a=0;a<size;a++){let run=1;for(let b=1;b<size;b++){const c=t?M[b][a]:M[a][b],pc=t?M[b-1][a]:M[a][b-1];if(c===pc){run++;if(run===5)p+=3;else if(run>5)p++}else run=1}}
+      for(let y=0;y<size-1;y++)for(let x=0;x<size-1;x++){const c=M[y][x];if(c===M[y][x+1]&&c===M[y+1][x]&&c===M[y+1][x+1])p+=3}
+      M.forEach(r=>r.forEach(c=>{if(c)dark++}));const tot=size*size;p+=(Math.ceil(Math.abs(dark*20-tot*10)/tot)-1)*10;return p};
+    let best=0,bp=1e9;
+    for(let m=0;m<8;m++){aplica(m);fmt(m);const p=pena();if(p<bp){bp=p;best=m}aplica(m)}
+    aplica(best);fmt(best);
+    return{size,M};
+  }
+  function svg(text){
+    const{size,M}=make(text),q=4,t=size+q*2;let d='';
+    for(let y=0;y<size;y++)for(let x=0;x<size;x++)if(M[y][x])d+=`M${x+q},${y+q}h1v1h-1z`;
+    return`<svg viewBox="0 0 ${t} ${t}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="${t}" height="${t}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  }
+  return{make,svg,rs};
+})();
+
+/* ===== Pix estático (BR Code do Banco Central) ===== */
+const semAcento=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'');
+const tlv=(id,val)=>id+String(val.length).padStart(2,'0')+val;
+function crc16(s){let c=0xFFFF;for(let i=0;i<s.length;i++){c^=s.charCodeAt(i)<<8;for(let j=0;j<8;j++)c=(c&0x8000)?((c<<1)^0x1021)&0xFFFF:(c<<1)&0xFFFF}return c.toString(16).toUpperCase().padStart(4,'0')}
+function chavePix(c){
+  const k=(c.pixChave||'').trim();
+  if(c.pixTipo==='cel'){let d=k.replace(/\D/g,'');if(d.length>=12&&d.startsWith('55'))d=d.slice(2);return'+55'+d}
+  if(c.pixTipo==='cpf')return k.replace(/\D/g,'');
+  if(c.pixTipo==='email')return k.toLowerCase();
+  return k;
+}
+function pixCode(valor){
+  const c=S.config,limpa=(s,n)=>semAcento(s).toUpperCase().replace(/[^A-Z0-9 ]/g,'').trim().slice(0,n);
+  const nome=limpa(c.pixNome,25)||'CONFEITARIA',cidade=limpa(c.pixCidade,15)||'BRASIL';
+  const conta=tlv('00','br.gov.bcb.pix')+tlv('01',chavePix(c));
+  const p=tlv('00','01')+tlv('01','12')+tlv('26',conta)+tlv('52','0000')+tlv('53','986')+(valor>0?tlv('54',(+valor).toFixed(2)):'')+tlv('58','BR')+tlv('59',nome)+tlv('60',cidade)+tlv('62',tlv('05','***'))+'6304';
+  return p+crc16(p);
+}
+function salvarPix(){
+  const tipo=v('x_tipo'),chave=v('x_chave').trim(),d=chave.replace(/\D/g,'');
+  if(!chave)return alert('Digite a sua chave Pix.');
+  if(tipo==='cpf'&&d.length!==11&&d.length!==14)return alert('CPF tem 11 números e CNPJ tem 14.');
+  if(tipo==='cel'&&(d.length<10||d.length>13))return alert('Celular com DDD, por exemplo 11 91234-5678.');
+  if(tipo==='email'&&!chave.includes('@'))return alert('E-mail inválido.');
+  const nome=v('x_nome').trim();if(!nome)return alert('Digite o nome que aparece para quem paga.');
+  S.config={...S.config,pixTipo:tipo,pixChave:chave,pixNome:nome,pixCidade:v('x_cidade').trim(),sinalPct:Math.min(100,Math.max(1,+v('x_pct')||50))};
+  salvar();alert('Pix salvo! Confira o QR code com um pagamento de teste de poucos centavos antes de usar com clientes.');render();
+}
+
+/* ===== Cobrança Pix por encomenda ===== */
+let pixSt=null;
+const devidoSinal=e=>Math.max(0,e.valor*(S.config.sinalPct||50)/100-e.sinal);
+const saldoEnc=e=>Math.max(0,e.valor-e.sinal);
+function fPix(id){
+  if(!S.config.pixChave){alert('Primeiro cadastre sua chave Pix em Ajustes.');go('ajustes');return}
+  const e=S.encomendas.find(x=>x.id===id);pixSt={id};
+  modal(`<h3>${ic('pix',22)} Cobrar por Pix</h3>
+  <div class="muted">${esc(e.cliente)} · pedido de ${R(e.valor)} · já pago ${R(e.sinal)}</div>
+  ${sel('p_tipo','O que cobrar',[['sinal','Sinal para reservar ('+(S.config.sinalPct||50)+'%)'],['saldo','Saldo restante'],['outro','Outro valor']],'sinal','onchange="pixCalc()"')}
+  ${campo('p_val','Valor (R$)','number',0,'oninput="pixDraw()"')}
+  <div id="pixbox"></div>
+  <div class="btns"><button class="p" onclick="copiar(pixSt.code)">${ic('copy',18)} Copiar Pix</button><button class="ok" onclick="pixZap()">${ic('chat',18)} Enviar no WhatsApp</button></div>
+  <div class="btns"><button onclick="pixRecebi()">${ic('check',18)} Recebi este valor</button><button onclick="fechar()">Fechar</button></div>`);
+  pixCalc();
+}
+function pixCalc(){
+  const e=S.encomendas.find(x=>x.id===pixSt.id),t=v('p_tipo');
+  if(t!=='outro')$('#p_val').value=(t==='sinal'?devidoSinal(e):saldoEnc(e)).toFixed(2);
+  pixDraw();
+}
+function pixDraw(){
+  const val=+v('p_val')||0;
+  try{pixSt.code=pixCode(val);pixSt.val=val;
+    $('#pixbox').innerHTML=`<div class="qr">${QR.svg(pixSt.code)}</div><div class="muted" style="text-align:center">Quem paga vê: <b>${esc(S.config.pixNome)}</b> · ${val>0?R(val):'valor livre'}</div><label>Pix copia e cola</label><textarea readonly onclick="this.select()">${esc(pixSt.code)}</textarea>`;
+  }catch(err){$('#pixbox').innerHTML='<div class="baixo">Não consegui gerar o QR: '+esc(err.message)+'</div>'}
+}
+function pixZap(){
+  const e=S.encomendas.find(x=>x.id===pixSt.id);
+  const txt=preencher(msgTxt('sinal'),e,{pix:pixSt.code,sinalDevido:R(pixSt.val)});
+  window.open(waLink(e.tel,txt),'_blank');
+}
+function pixRecebi(){
+  const e=S.encomendas.find(x=>x.id===pixSt.id),val=pixSt.val||0;
+  if(val<=0)return alert('Informe o valor recebido.');
+  if(!confirm(`Registrar ${R(val)} como pago por ${e.cliente}?`))return;
+  e.sinal=+(e.sinal+val).toFixed(2);salvar();fechar();render();
+}
+async function copiar(txt){
+  try{await navigator.clipboard.writeText(txt)}
+  catch(e){const t=document.createElement('textarea');t.value=txt;document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(_){}t.remove()}
+  alert('Copiado!');
+}
+
+/* ===== Mensagens prontas de WhatsApp ===== */
+const MSGS=[
+ ['orcamento','Orçamento','Oi, {cliente}! Tudo bem? 😊 Segue o orçamento do seu {produto} para {data}: *{valor}*. Para reservar a data, trabalho com sinal de {sinalPct}% ({sinalDevido}) e o restante na entrega. Posso confirmar?'],
+ ['sinal','Pedir o sinal (Pix)','Oi, {cliente}! Para garantir a data do seu {produto} ({data}), falta o sinal de *{sinalDevido}*. Segue o Pix copia e cola:\n\n{pix}\n\nQuando pagar, me envia o comprovante, por favor 🙏'],
+ ['confirmacao','Confirmação do pedido','Oi, {cliente}! Seu pedido está confirmado ✅ {produto} para {data}{horaTxt}. Valor: {valor} (já pago {sinal}, falta {saldo}). Qualquer dúvida é só chamar! 💕'],
+ ['vespera','Lembrete na véspera','Oi, {cliente}! Passando para lembrar que a entrega do seu {produto} é {data}{horaTxt}. Falta receber {saldo}. Combinado? 🎂'],
+ ['agradecimento','Agradecimento','Oi, {cliente}! Obrigada por escolher a Mamãe de Açúcar 💕 Espero que tenham amado o {produto}!'],
+ ['avaliacao','Pedir avaliação','Oi, {cliente}! Que tal me contar o que achou? Uma foto e um comentário ajudam muito a Mamãe de Açúcar 🥰 Obrigada!']
+];
+const msgTxt=k=>(S.config.msgs&&S.config.msgs[k])||MSGS.find(m=>m[0]===k)[2];
+function preencher(texto,e,extra={}){
+  const r=S.receitas.find(x=>x.id===e.receitaId),pct=S.config.sinalPct||50,dev=devidoSinal(e),sal=saldoEnc(e);
+  const pix=S.config.pixChave?pixCode(dev>0?dev:sal):'(cadastre sua chave Pix em Ajustes)';
+  const m={cliente:(e.cliente||'').split(' ')[0],produto:r?r.nome:(e.descricao||'encomenda'),data:dataBR(e.data),horaTxt:e.hora?' às '+e.hora:'',
+    valor:R(e.valor),sinal:R(e.sinal),saldo:R(sal),sinalDevido:R(dev),sinalPct:pct,pix,...extra};
+  return texto.replace(/\{(\w+)\}/g,(x,k)=>k in m?m[k]:x);
+}
+function waLink(tel,txt){
+  let d=String(tel||'').replace(/\D/g,'');if(d&&!(d.startsWith('55')&&d.length>=12))d='55'+d;
+  return'https://wa.me/'+d+'?text='+encodeURIComponent(txt);
+}
+let msgSt=null;
+function fMsg(id){
+  const e=S.encomendas.find(x=>x.id===id);msgSt={id};
+  let ini='orcamento';
+  if(e.status==='entregue')ini='agradecimento';
+  else if(e.status==='pendente')ini=e.sinal<=0?'sinal':(e.data===addDias(hoje(),1)?'vespera':'confirmacao');
+  modal(`<h3>${ic('chat',22)} Mensagem para ${esc(e.cliente)}</h3>
+  ${sel('m_tpl','Modelo',MSGS.map(m=>[m[0],m[1]]),ini,'onchange="msgTpl()"')}
+  <label>Texto (pode editar antes de enviar)</label><textarea id="m_txt" style="min-height:170px"></textarea>
+  ${e.tel?'':'<div class="muted">Esta cliente está sem WhatsApp cadastrado: o WhatsApp vai pedir para você escolher o contato.</div>'}
+  <div class="btns"><button class="ok" onclick="msgZap()">${ic('chat',18)} Abrir no WhatsApp</button><button onclick="copiar(v('m_txt'))">${ic('copy',18)} Copiar</button><button onclick="fechar()">Fechar</button></div>`);
+  msgTpl();
+}
+function msgTpl(){const e=S.encomendas.find(x=>x.id===msgSt.id);$('#m_txt').value=preencher(msgTxt(v('m_tpl')),e)}
+function msgZap(){const e=S.encomendas.find(x=>x.id===msgSt.id);window.open(waLink(e.tel,v('m_txt')),'_blank')}
+function salvarMsgs(){
+  const o={};MSGS.forEach(([k,,d])=>{const t=v('m_'+k).trim();if(t&&t!==d)o[k]=t});
+  S.config={...S.config,msgs:o};salvar();alert('Mensagens salvas!');render();
+}
+function restMsgs(){if(!confirm('Voltar todas as mensagens ao texto padrão?'))return;S.config={...S.config,msgs:{}};salvar();render()}
+
 /* ===== Cópia de segurança e exemplo ===== */
-function backup(){baixar('mamae-de-acucar-'+hoje()+'.json',JSON.stringify(S,null,1),'application/json')}
+const precisaBackup=()=>(S.receitas.length||S.encomendas.length)&&(!S.ultBackup||S.ultBackup<addDias(hoje(),-7));
+async function backup(compartilhar){
+  const nome='mamae-de-acucar-'+hoje()+'.json',txt=JSON.stringify({...S,ultBackup:hoje()},null,1);
+  let feito=false;
+  try{
+    const f=new File([txt],nome,{type:'application/json'});
+    if(compartilhar&&navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:'Cópia de segurança - Mamãe de Açúcar'});feito=true}
+    else{baixar(nome,txt,'application/json');feito=true}
+  }catch(e){if(e&&e.name==='AbortError')return;baixar(nome,txt,'application/json');feito=true}
+  if(feito){S.ultBackup=hoje();salvar();render()}
+}
 function restaurar(f){
   if(!f)return;const rd=new FileReader();
   rd.onload=()=>{try{const d=JSON.parse(rd.result);if(!d.itens||!d.receitas||!d.encomendas)throw 0;
@@ -604,9 +825,16 @@ function exemplo(){
 }
 
 /* ===== Início ===== */
-if(!S.seedV){if(!S.itens.length)basicos();S.seedV=1;salvar()}
-render();
-notificar(false);
+async function iniciar(){
+  // se o navegador apagou os dados principais, recupera da cópia interna
+  try{if(localStorage.getItem(KEY)===null){const d=await idbGet();if(d){const o=JSON.parse(d);S={...structuredClone(padrao),...o,config:{...padrao.config,...o.config}};try{localStorage.setItem(KEY,d)}catch(e){}recuperado=true}}}catch(e){}
+  if(!S.seedV){if(!S.itens.length)basicos();S.seedV=1;salvar()}
+  pronto=true;idbSet(JSON.stringify(S));
+  render();notificar(false);
+  if(recuperado)alert('Seus dados foram recuperados da cópia interna do aplicativo.');
+  try{if(navigator.storage&&navigator.storage.persist){persistido=await navigator.storage.persist();if(aba==='ajustes')render()}}catch(e){}
+}
+iniciar();
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
