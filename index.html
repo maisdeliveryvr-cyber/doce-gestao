@@ -114,6 +114,11 @@ input:focus,select:focus{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(227,
 .qr{background:#fff;padding:10px;border-radius:18px;max-width:260px;margin:12px auto;box-shadow:0 1px 0 #fff inset,0 14px 28px -14px rgba(179,18,58,.5);border:1px solid var(--borda)}
 .qr svg{display:block;width:100%;height:auto}
 textarea{min-height:90px;resize:vertical;font-size:13px}
+.prog{height:14px;border-radius:9px;background:#f3dfe3;position:relative;overflow:hidden;box-shadow:0 2px 4px rgba(179,18,58,.12) inset}
+.prog i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#f0617a,#b3123a)}
+.prog i.ok{background:linear-gradient(90deg,#34b96f,#1f9d55)}
+.prog i.al{background:linear-gradient(90deg,#f5a623,#d97706)}
+.prog b{position:absolute;top:0;bottom:0;width:2px;background:#3a2a2e;opacity:.45}
 .alt{padding:9px 0;border-top:1px dashed rgba(227,72,95,.2)}
 .alt:first-child{border-top:0;padding-top:0}
 .altaok{color:var(--ok);font-weight:800}
@@ -201,7 +206,7 @@ const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces
 
 /* ===== Dados ===== */
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
-const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,orcValidade:7,orcContato:'',orcTermos:'',pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],orcSeq:0,seedV:0,ultBackup:''};
+const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,orcValidade:7,orcContato:'',orcTermos:'',meiOn:false,meiAbertura:'',meiDAS:82.05,proLabore:0,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],orcSeq:0,meiPagos:{},seedV:0,ultBackup:''};
 let S=carregar();
 function carregar(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
@@ -271,9 +276,9 @@ const ABAS=[['inicio','home','Início'],['agenda','cal','Agenda'],['receitas','c
 let aba='inicio',mes=new Date(),ed=null,bq='',bm='';
 function go(a){aba=a;render();scrollTo(0,0)}
 function render(){
-  const ativa=aba==='compras'?'estoque':aba;
+  const ativa=aba==='compras'?'estoque':aba==='relatorios'?'inicio':aba;
   $('#nav').innerHTML=ABAS.map(([k,i,t])=>`<button class="${k===ativa?'on':''}" onclick="go('${k}')">${ic(i)}${t}</button>`).join('');
-  $('#app').innerHTML=({inicio:vInicio,agenda:vAgenda,receitas:vReceitas,estoque:vEstoque,mercado:vMercado,ajustes:vAjustes,compras:vCompras})[aba]();
+  $('#app').innerHTML=({inicio:vInicio,agenda:vAgenda,receitas:vReceitas,estoque:vEstoque,mercado:vMercado,ajustes:vAjustes,compras:vCompras,relatorios:vRel})[aba]();
 }
 
 function cardEnc(e){
@@ -311,6 +316,7 @@ function vInicio(){
     <div class="stat"><span class="ico">${ic('coin')}</span><div class="muted">A receber</div><div class="num">${R(receber)}</div></div>
   </div>
   ${cardAltas(30,3)}
+  ${cardMEI()}
   ${cardFestas(45,2)}
   <h3>${ic('bell',20)} Hoje</h3>${hojeL.map(cardEnc).join('')||'<div class="vazio">Nenhuma entrega hoje.</div>'}
   ${hojeL.length?`<button class="big" onclick="fProd('${h}')">${ic('list',18)} Lista de produção de hoje</button>`:''}
@@ -319,6 +325,7 @@ function vInicio(){
   ${prox.length?`<h3>${ic('cake',20)} Próximas</h3>${prox.map(cardEnc).join('')}`:''}
   ${baixo.length?`<h3>${ic('cart',20)} Comprar logo</h3><div class="card alerta">${baixo.map(i=>`<div class="row"><span>${esc(i.nome)}</span><span class="baixo">${N(i.estoque)} ${i.unidade}</span></div>`).join('')}</div>`:''}
   <button class="big" onclick="go('compras')">${ic('cart',20)} Lista de compras</button>
+  <button class="big" onclick="go('relatorios')">${ic('chart',20)} Relatórios e MEI</button>
   <button class="p big" onclick="fEnc()">${ic('plus',20)} Nova encomenda</button>`;
 }
 
@@ -1243,6 +1250,155 @@ function salvarOrc(){
   const t=v('o_termos').trim();
   S.config={...S.config,orcContato:v('o_contato').trim(),orcValidade:Math.max(1,Math.round(+v('o_validade')||7)),orcTermos:t===TERMOS_PADRAO?'':t};
   salvar();alert('Orçamento salvo!');render();
+}
+
+/* ===== Relatórios e MEI ===== */
+const MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const MESES_L=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+let relSec='resumo',relMes=new Date(),relAno=false;
+const entregues=(ini,fim)=>S.encomendas.filter(e=>e.status==='entregue'&&e.data>=ini&&e.data<=fim);
+function relRange(){const y=relMes.getFullYear(),m=relMes.getMonth();return relAno?[`${y}-01-01`,`${y}-12-31`]:[`${y}-${pad(m+1)}-01`,fmtISO(new Date(y,m+1,0))]}
+function relNav(n){relMes=relAno?new Date(relMes.getFullYear()+n,0,1):new Date(relMes.getFullYear(),relMes.getMonth()+n,1);render()}
+function relSet(s){relSec=s;render()}
+function relModo(a){relAno=a;render()}
+function stats(es){
+  const c=S.config;let venda=0,lucro=0,mao=0,contrib=0,vendaRec=0,semRec=0;const prod={};
+  es.forEach(e=>{
+    const v=+e.valor||0,q=e.qtd||1,r=S.receitas.find(x=>x.id===e.receitaId);venda+=v;
+    if(!r){semRec++;return}
+    const k=custo(r),lu=v-v*c.taxa/100-k.total*q;vendaRec+=v;lucro+=lu;mao+=k.mao*q;
+    contrib+=v-v*c.taxa/100-(k.ing+k.perda+k.gas)*q;
+    const p=prod[r.id]=prod[r.id]||{nome:r.nome,qtd:0,fat:0,lucro:0};p.qtd+=q;p.fat+=v;p.lucro+=lu;
+  });
+  return{venda,n:es.length,ticket:es.length?venda/es.length:0,lucro,mao,pct:vendaRec>0?contrib/vendaRec:null,semRec,prod};
+}
+function pctContrib(st){
+  if(st.pct!=null&&st.pct>0)return{p:st.pct,fonte:'das vendas do período'};
+  const c=S.config,l=S.receitas.map(r=>{const k=custo(r);return k.preco>0?(k.preco*(1-c.taxa/100)-(k.ing+k.perda+k.gas))/k.preco:null}).filter(x=>x!=null&&x>0);
+  return l.length?{p:l.reduce((a,b)=>a+b,0)/l.length,fonte:'média das suas receitas'}:null;
+}
+const cap1=s=>s.charAt(0).toUpperCase()+s.slice(1);
+function vRel(){
+  const abas=[['resumo','Resumo'],['produtos','Produtos'],['mei','MEI']];
+  return`<div class="row" style="margin-bottom:10px"><b style="font-size:19px;color:var(--rosa-esc)">${ic('chart',22)} Relatórios</b><button onclick="go('inicio')">Voltar</button></div>
+  <div class="chips" style="margin-bottom:12px">${abas.map(([k,t])=>`<button class="${k===relSec?'p':''}" onclick="relSet('${k}')">${t}</button>`).join('')}</div>`
+  +({resumo:relResumo,produtos:relProdutos,mei:relMEI})[relSec]();
+}
+function relPeriodo(){
+  const y=relMes.getFullYear(),m=relMes.getMonth();
+  return`<div class="row"><button onclick="relNav(-1)">◀</button><b>${relAno?y:cap1(MESES_L[m])+' de '+y}</b><button onclick="relNav(1)">▶</button></div>
+  <div class="chips" style="margin:8px 0 12px"><button class="${!relAno?'p':''}" onclick="relModo(false)">Mês</button><button class="${relAno?'p':''}" onclick="relModo(true)">Ano</button></div>`;
+}
+function relResumo(){
+  const[ini,fim]=relRange(),st=stats(entregues(ini,fim)),c=S.config,mult=relAno?12:1;
+  const pend=S.encomendas.filter(e=>e.status==='pendente');
+  const sinais=pend.reduce((s,e)=>s+(+e.sinal||0),0),aRec=pend.reduce((s,e)=>s+Math.max(0,e.valor-e.sinal),0),atras=pend.filter(e=>e.data<hoje()).reduce((s,e)=>s+Math.max(0,e.valor-e.sinal),0);
+  const retirada=st.mao+st.lucro,meta=(c.proLabore||0)*mult;
+  let pe='';
+  if(!relAno){
+    const pc=pctContrib(st);
+    if(pc){const pe1=c.custosFixosMes/pc.p,pe2=(c.custosFixosMes+(c.proLabore||0))/pc.p,pr=Math.min(1,st.venda/(pe2||1));
+      pe=`<div class="card"><b>${ic('chart',18)} Ponto de equilíbrio do mês</b>
+      <div class="muted">Para cobrir os gastos fixos (${R(c.custosFixosMes)}): vender <b>${R(pe1)}</b>${(c.proLabore||0)>0?`<br>Para cobrir também a retirada desejada (${R(c.proLabore)}): vender <b>${R(pe2)}</b>`:''}</div>
+      <div class="prog" style="margin:10px 0 6px"><i class="${pr>=1?'ok':''}" style="width:${(pr*100).toFixed(0)}%"></i></div>
+      <div class="muted">Vendido no mês: <b>${R(st.venda)}</b> (${N(st.venda/(pe2||1)*100)}% da meta) · margem de contribuição ${N(pc.p*100)}% ${pc.fonte}</div></div>`}
+  }
+  return relPeriodo()+`
+  <div class="grid">
+    <div class="stat forte"><span class="ico">${ic('wallet')}</span><div class="muted">Vendido (entregue)</div><div class="num">${R(st.venda)}</div></div>
+    <div class="stat"><span class="ico">${ic('coin')}</span><div class="muted">Lucro estimado</div><div class="num">${R(st.lucro)}</div></div>
+    <div class="stat"><span class="ico">${ic('cake')}</span><div class="muted">Pedidos entregues</div><div class="num">${st.n}</div></div>
+    <div class="stat"><span class="ico">${ic('tag')}</span><div class="muted">Ticket médio</div><div class="num">${R(st.ticket)}</div></div>
+  </div>
+  <div class="card" style="margin-top:12px"><b>${ic('wallet',18)} O que sobrou para você</b>
+    <div class="muted">Seu trabalho (horas × valor da hora): <b>${R(st.mao)}</b> + lucro: <b>${R(st.lucro)}</b></div>
+    <div class="row" style="margin:6px 0"><span>Retirada possível</span><span class="num" style="font-size:22px;font-weight:800;color:var(--rosa-esc)">${R(retirada)}</span></div>
+    ${meta>0?`<div class="prog"><i class="${retirada>=meta?'ok':''}" style="width:${Math.min(100,retirada/meta*100).toFixed(0)}%"></i></div><div class="muted" style="margin-top:6px">Meta de retirada: ${R(meta)} · ${retirada>=meta?'meta atingida':'faltam '+R(meta-retirada)}</div>`:'<div class="muted">Defina quanto você quer retirar por mês para acompanhar a meta.</div>'}
+    <label>Quanto quero retirar por mês (R$)</label><input id="rl_pro" type="number" step="any" inputmode="decimal" value="${c.proLabore||''}" placeholder="0">
+    <button class="p big" style="margin-top:8px" onclick="salvarPro()">Salvar meta</button></div>
+  ${pe}
+  <div class="card ${atras>0?'ruim':''}"><b>${ic('coin',18)} Recebimentos</b>
+    <div class="row"><span class="muted">Sinais já recebidos (pedidos em aberto)</span><b>${R(sinais)}</b></div>
+    <div class="row"><span class="muted">A receber na entrega</span><b>${R(aRec)}</b></div>
+    ${atras>0?`<div class="row"><span class="baixo">Atrasado (data já passou)</span><b class="baixo">${R(atras)}</b></div>`:''}</div>
+  <div class="dica">${ic('spark',20)}<div>O lucro usa os custos de <b>hoje</b> das suas receitas (ingredientes, perdas, gás, seu trabalho e gastos fixos rateados) e a taxa da maquininha. ${st.semRec?`<b>${st.semRec} ${st.semRec>1?'pedidos entregues sem':'pedido entregue sem'} receita</b> ficam fora do lucro. `:''}O pró-labore já está dentro do preço: o que sobra mais o trabalho é a sua retirada.</div></div>`;
+}
+function salvarPro(){S.config={...S.config,proLabore:Math.max(0,+v('rl_pro')||0)};salvar();render()}
+function relProdutos(){
+  const[ini,fim]=relRange(),st=stats(entregues(ini,fim));
+  const lista=Object.values(st.prod).sort((a,b)=>b.lucro-a.lucro);
+  // curva ABC: últimos 12 meses, por faturamento (80% / 95% é convenção)
+  const s12=stats(entregues(addDias(hoje(),-365),hoje())),abc=Object.values(s12.prod).sort((a,b)=>b.fat-a.fat),tot=abc.reduce((s,p)=>s+p.fat,0);
+  let cum=0;const abcL=abc.map(p=>{const antes=cum/tot*100;cum+=p.fat;return{...p,cls:antes<80?'A':antes<95?'B':'C',pct:p.fat/tot*100}});
+  return relPeriodo()+`
+  <h3>${ic('star',20)} Produtos mais lucrativos</h3>
+  <div class="card">${lista.map(p=>`<div class="alt"><div class="row"><b>${esc(p.nome)}</b><span class="tag ${p.lucro>=0?'ok':'est'}">${N(p.fat?p.lucro/p.fat*100:0)}% de margem</span></div>
+    <div class="muted">${p.qtd} vendido${p.qtd>1?'s':''} · faturou ${R(p.fat)} · lucro estimado <b>${R(p.lucro)}</b></div></div>`).join('')||'<div class="vazio">Nenhuma entrega com receita neste período.</div>'}</div>
+  <h3>${ic('chart',20)} Curva ABC (últimos 12 meses)</h3>
+  <div class="card">${abcL.map(p=>`<div class="alt"><div class="row"><span><span class="tag ${p.cls==='A'?'ok':p.cls==='B'?'est':''}">${p.cls}</span> <b>${esc(p.nome)}</b></span><span class="muted">${N(p.pct)}% do faturamento</span></div></div>`).join('')||'<div class="vazio">Sem vendas nos últimos 12 meses.</div>'}
+    <div class="muted" style="margin-top:8px">A = produtos que somam até 80% do faturamento, B = até 95%, C = o resto. É uma convenção: foque o cuidado e o estoque nos A.</div></div>
+  <h3>${ic('coin',20)} Margem de cada receita (preços de hoje)</h3>
+  <div class="card">${S.receitas.map(r=>{const k=custo(r);return`<div class="alt"><div class="row"><b>${esc(r.nome)}</b><span class="tag">${N(k.preco>0?k.lucro/k.preco*100:0)}% líquido</span></div><div class="muted">Preço ${R(k.preco)} · custo ${R(k.total)} · lucro ${R(k.lucro)}</div></div>`}).join('')||'<div class="vazio">Cadastre receitas em Preços.</div>'}</div>`;
+}
+/* --- MEI --- */
+const meiLimite=()=>{const y=new Date().getFullYear(),ab=S.config.meiAbertura;if(ab&&ab.slice(0,4)===String(y))return 6750*(13-(+ab.slice(5,7)));return 81000};
+function meiDados(){
+  const hj=new Date(),y=hj.getFullYear(),m=hj.getMonth()+1,lim=meiLimite(),ab=S.config.meiAbertura;
+  const fat=entregues(`${y}-01-01`,`${y}-12-31`).reduce((s,e)=>s+(+e.valor||0),0);
+  const mAb=ab&&ab.slice(0,4)===String(y)?+ab.slice(5,7):1,frac=(hj.getDate()-1)/new Date(y,m,0).getDate();
+  const decorridos=Math.max(0.25,m-mAb+frac),total=13-mAb,restantes=Math.max(1,12-m+1);
+  return{y,m,lim,fat,r:fat/lim,proj:fat/decorridos*total,mediaRest:Math.max(0,lim-fat)/restantes};
+}
+function dasInfo(){
+  const h=hoje(),y=+h.slice(0,4),m=+h.slice(5,7);let cy=y,cm=m-1;if(cm===0){cm=12;cy--}
+  const comp=`${cy}-${pad(cm)}`,venc=`${y}-${pad(m)}-20`;
+  return{comp,venc,pago:!!S.meiPagos[comp],dias:diasAte(venc),nome:cap1(MESES_L[cm-1])+'/'+cy};
+}
+function cardMEI(){
+  if(!S.config.meiOn)return'';
+  const d=meiDados(),das=dasInfo();let h='';
+  if(d.r>=0.8)h+=`<div class="${d.r>1?'ruim':'alerta'}" style="margin-bottom:6px"><b>${ic('warn',16)} Limite do MEI: ${N(d.r*100)}% usado</b> <span class="muted">(${R(d.fat)} de ${R(d.lim)})</span></div>`;
+  if(!das.pago&&das.dias<=7)h+=`<div class="${das.dias<0?'baixo':''}" style="margin-bottom:6px"><b>${ic('bell',16)} DAS de ${das.nome} ${das.dias<0?'está atrasado':'vence '+(das.dias===0?'hoje':'em '+das.dias+' dia'+(das.dias>1?'s':''))}</b> <span class="muted">(dia ${das.venc.slice(8)}/${das.venc.slice(5,7)})</span></div>`;
+  return h?`<div class="card ${d.r>1?'ruim':'alerta'} clic" onclick="relSec='mei';go('relatorios')"><b>${ic('shield',18)} MEI</b><div style="margin-top:6px">${h}</div><div class="muted">Toque para ver os detalhes</div></div>`:'';
+}
+function meiLigar(on){S.config={...S.config,meiOn:on};salvar();render()}
+function meiPago(comp){S.meiPagos[comp]=!S.meiPagos[comp];salvar();render()}
+function salvarMEI(){S.config={...S.config,meiAbertura:v('m_ab'),meiDAS:Math.max(0,+v('m_das')||0)};salvar();alert('Salvo!');render()}
+function relMEI(){
+  const c=S.config;
+  if(!c.meiOn)return`<div class="card"><b>${ic('shield',20)} Acompanhamento do MEI</b><p class="muted" style="font-size:14.5px">Se você é Microempreendedora Individual, o app acompanha o seu faturamento no ano contra o limite do MEI, avisa quando você se aproximar e lembra do DAS mensal.</p><button class="p big" onclick="meiLigar(true)">Eu sou MEI, ativar</button></div>
+  <div class="dica">${ic('spark',20)}<div>Informações de referência. Confirme sempre no Portal do Empreendedor ou com seu contador.</div></div>`;
+  const d=meiDados(),das=dasInfo(),max=d.lim*1.2,w=Math.min(1,d.fat/max)*100,cls=d.r>1?'':d.r>=0.8?'al':'ok';
+  const meses=Array.from({length:12},(_,i)=>entregues(`${d.y}-${pad(i+1)}-01`,fmtISO(new Date(d.y,i+1,0))).reduce((s,e)=>s+(+e.valor||0),0)),mx=Math.max(...meses,d.lim/12,1);
+  let msg,tipo='';
+  if(d.r>1.2){msg=`Você passou de 120% do limite (${R(max)}). Nesse caso o desenquadramento do MEI vale desde 1º de janeiro. Procure um contador com urgência.`;tipo='ruim'}
+  else if(d.r>1){msg=`Você passou do limite de ${R(d.lim)}, mas está dentro dos 20% de tolerância (até ${R(max)}). Em geral há DAS complementar sobre o excedente e saída do MEI no ano seguinte. Confirme com o contador.`;tipo='ruim'}
+  else if(d.r>=0.8){msg=`Atenção: você já usou ${N(d.r*100)}% do limite. Restam ${R(d.lim-d.fat)}.`;tipo='alerta'}
+  else msg=`Dentro do limite: restam ${R(d.lim-d.fat)}.`;
+  const dasn=d.m<=5?`<div class="row" style="margin-top:8px"><span>Declaração anual (DASN-SIMEI) de ${d.y-1}</span><span class="tag">até 31/05 · ${diasAte(d.y+'-05-31')} dias</span></div>`:'';
+  return`<div class="card ${tipo}"><b>${ic('shield',20)} Limite do MEI em ${d.y}</b>
+    <div class="row" style="margin:8px 0 4px"><span class="num" style="font-size:24px;font-weight:800">${R(d.fat)}</span><span class="muted">de ${R(d.lim)}</span></div>
+    <div class="prog"><i class="${cls}" style="width:${w.toFixed(1)}%"></i><b style="left:${(0.8/1.2*100).toFixed(1)}%" title="80%"></b><b style="left:${(1/1.2*100).toFixed(1)}%" title="100%"></b></div>
+    <div class="row muted" style="margin-top:4px"><span>80%</span><span>100% (limite)</span><span>120%</span></div>
+    <p style="margin:10px 0 4px">${msg}</p>
+    <div class="muted">Ritmo atual: projeção de <b>${R(d.proj)}</b> no ano${d.proj>d.lim?' <span class="baixo">(acima do limite)</span>':''}. Para ficar no limite, a média restante é <b>${R(d.mediaRest)}</b> por mês.</div>
+    <svg viewBox="0 0 300 80" width="100%" style="margin-top:10px" role="img" aria-label="Faturamento por mês">${meses.map((v,i)=>{const hh=v/mx*60;return`<rect x="${i*25+4}" y="${66-hh}" width="17" height="${Math.max(hh,1)}" rx="3" fill="#e3485f" opacity="${i+1===d.m?1:.65}"/><text x="${i*25+12.5}" y="77" font-size="7" text-anchor="middle" fill="#8a747a">${MESES[i]}</text>`}).join('')}<line x1="0" x2="300" y1="${66-d.lim/12/mx*60}" y2="${66-d.lim/12/mx*60}" stroke="#3a2a2e" stroke-dasharray="3 3" opacity=".5"/></svg>
+    <div class="muted">A linha tracejada é a média mensal do limite (${R(d.lim/12)}). O faturamento conta os pedidos marcados como <b>entregues</b>, pela data de entrega.</div></div>
+  <div class="card ${!das.pago&&das.dias<0?'ruim':''}"><b>${ic('bell',20)} DAS mensal</b>
+    <div class="muted">Competência ${das.nome}: vence dia 20 (${das.venc.slice(8)}/${das.venc.slice(5,7)}) · ${das.pago?'<b style="color:var(--ok)">pago</b>':das.dias<0?'<span class="baixo">atrasado há '+(-das.dias)+' dias</span>':'faltam '+das.dias+' dias'}</div>
+    <div class="btns"><button class="${das.pago?'ok':'p'}" onclick="meiPago('${das.comp}')">${ic('check',18)} ${das.pago?'Pago (toque para desmarcar)':'Marcar como pago'}</button></div>
+    <label>Marque os meses já pagos em ${d.y}</label>
+    <div class="chips">${MESES.map((n,i)=>{const comp=`${d.y}-${pad(i+1)}`;return`<button class="${S.meiPagos[comp]?'ok':''}" ${i+1>d.m?'disabled style="opacity:.4"':''} onclick="meiPago('${comp}')">${n}</button>`}).join('')}</div>
+    ${dasn}</div>
+  <div class="card"><b>${ic('sliders',20)} Seus dados do MEI</b>
+    ${campo('m_das','Valor do seu DAS (R$)','number',c.meiDAS)}
+    <div class="btns"><button onclick="$('#m_das').value=82.05">Comércio/indústria 82,05</button><button onclick="$('#m_das').value=86.05">Serviços 86,05</button><button onclick="$('#m_das').value=87.05">Os dois 87,05</button></div>
+    <div class="muted">Valores de referência de 2026 (5% do salário mínimo + ICMS/ISS), de fontes não oficiais. Confirme no Portal do Empreendedor.</div>
+    ${campo('m_ab','Mês de abertura do MEI (só se abriu neste ano)','month',c.meiAbertura||'')}
+    <div class="muted">No ano de abertura o limite é proporcional: R$ 6.750 por mês de atividade.</div>
+    <button class="p big" onclick="salvarMEI()">Salvar</button>
+    <button class="big" onclick="if(confirm('Desativar o acompanhamento do MEI?'))meiLigar(false)">Desativar acompanhamento</button></div>
+  <div class="dica">${ic('spark',20)}<div>Referência: limite de R$ 81.000 por ano (R$ 6.750 por mês) com tolerância de 20% (até R$ 97.200), segundo o gov.br. Nota fiscal: vendas para empresas (CNPJ) normalmente exigem; para pessoa física, só se a cliente pedir. Prazos e regras mudam, então <b>confirme no Portal do Empreendedor ou com seu contador</b>. Isto não é aconselhamento contábil.</div></div>`;
 }
 
 /* ===== Cópia de segurança e exemplo ===== */
