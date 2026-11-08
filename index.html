@@ -97,6 +97,8 @@ input:focus,select:focus{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(227,
 .dia.meio{background:linear-gradient(180deg,#fff3c4,#ffe79a)}
 .dia.cheio{background:linear-gradient(180deg,#ffc2cb,#ff9aa9)}
 .dia.hoje{outline:2px solid var(--rosa);box-shadow:0 0 12px rgba(227,72,95,.5)}
+.dia.bloq{background:repeating-linear-gradient(45deg,#f1eaec,#f1eaec 4px,#e3d8db 4px,#e3d8db 8px);color:#9a8a8f}
+.dia.fest::after{content:"";position:absolute;left:5px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--verm);box-shadow:0 0 6px rgba(190,9,0,.6)}
 .legenda{font-size:12px;color:var(--mudo);margin:8px 0 2px}
 .baixo{color:var(--ruim);font-weight:800}
 .cot{display:grid;grid-template-columns:22px 1fr auto 34px;gap:8px;align-items:center;padding:8px 0;border-top:1px dashed rgba(227,72,95,.2)}
@@ -159,7 +161,9 @@ const IC={
   copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
   share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.9l7.6-3.8M8.2 13.1l7.6 3.8"/>',
   msg:'<path d="M4 5h16v11H9l-5 4V5z"/><path d="M8 9.5h8M8 12.5h5"/>',
-  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>'
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
+  lock:'<rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  list:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" stroke-width="2.6"/>'
 };
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${IC[n]||''}</svg>`;
 
@@ -196,7 +200,7 @@ const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces
 
 /* ===== Dados ===== */
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
-const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,custoForno:2,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],seedV:0,ultBackup:''};
+const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],seedV:0,ultBackup:''};
 let S=carregar();
 function carregar(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
@@ -306,8 +310,11 @@ function vInicio(){
     <div class="stat"><span class="ico">${ic('coin')}</span><div class="muted">A receber</div><div class="num">${R(receber)}</div></div>
   </div>
   ${cardAltas(30,3)}
+  ${cardFestas(45,2)}
   <h3>${ic('bell',20)} Hoje</h3>${hojeL.map(cardEnc).join('')||'<div class="vazio">Nenhuma entrega hoje.</div>'}
+  ${hojeL.length?`<button class="big" onclick="fProd('${h}')">${ic('list',18)} Lista de produção de hoje</button>`:''}
   <h3>${ic('cal',20)} Amanhã</h3>${amL.map(cardEnc).join('')||'<div class="vazio">Nenhuma entrega amanhã.</div>'}
+  ${amL.length?`<button class="big" onclick="fProd('${am}')">${ic('list',18)} Lista de produção de amanhã</button>`:''}
   ${prox.length?`<h3>${ic('cake',20)} Próximas</h3>${prox.map(cardEnc).join('')}`:''}
   ${baixo.length?`<h3>${ic('cart',20)} Comprar logo</h3><div class="card alerta">${baixo.map(i=>`<div class="row"><span>${esc(i.nome)}</span><span class="baixo">${N(i.estoque)} ${i.unidade}</span></div>`).join('')}</div>`:''}
   <button class="big" onclick="go('compras')">${ic('cart',20)} Lista de compras</button>
@@ -317,23 +324,134 @@ function vInicio(){
 function vAgenda(){
   const y=mes.getFullYear(),m=mes.getMonth();
   const primeiro=new Date(y,m,1).getDay(),dias=new Date(y,m+1,0).getDate();
-  const cont={};ativas().forEach(e=>cont[e.data]=(cont[e.data]||0)+1);
+  const cont={},carga={};ativas().forEach(e=>{cont[e.data]=(cont[e.data]||0)+1;carga[e.data]=(carga[e.data]||0)+pesoEnc(e)});
   const lim=S.config.limiteDia;
   let cel='';
   for(let i=0;i<primeiro;i++)cel+='<i></i>';
   for(let d=1;d<=dias;d++){
-    const iso=`${y}-${pad(m+1)}-${pad(d)}`,n=cont[iso]||0;
-    cel+=`<button class="dia ${n>=lim?'cheio':n?'meio':''} ${iso===hoje()?'hoje':''}" onclick="fEnc(null,'${iso}')">${d}${n?`<small>${n}</small>`:''}</button>`;
+    const iso=`${y}-${pad(m+1)}-${pad(d)}`,n=cont[iso]||0,c=carga[iso]||0,bl=bloqueioDe(iso),fs=festasDe(iso);
+    cel+=`<button class="dia ${bl?'bloq':c>=lim-1e-9&&n?'cheio':n?'meio':''} ${fs.length?'fest':''} ${iso===hoje()?'hoje':''}" title="${esc(fs.join(', ')||(bl?bl.motivo:''))}" onclick="fDia('${iso}')">${d}${n?`<small>${n}</small>`:''}</button>`;
   }
+  const bloqs=S.bloqueios.filter(b=>b.fim>=hoje()).sort((a,b)=>a.ini.localeCompare(b.ini));
   const pend=S.encomendas.filter(e=>e.status==='pendente').sort(cmp);
   const hist=S.encomendas.filter(e=>e.status!=='pendente').sort(cmp).reverse().slice(0,10);
   return`
   <div class="row"><button onclick="mudaMes(-1)">◀</button><b style="text-transform:capitalize">${mes.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</b><button onclick="mudaMes(1)">▶</button></div>
   <div class="card" style="margin-top:12px"><div class="cal">${['D','S','T','Q','Q','S','S'].map(d=>`<b>${d}</b>`).join('')}${cel}</div>
-  <div class="legenda">Amarelo: tem encomenda · Rosa: dia cheio (limite ${lim} por dia) · toque no dia para marcar</div></div>
+  <div class="legenda">Amarelo: tem encomenda · Rosa: dia cheio (${N(lim)} pontos por dia) · Listrado: bloqueado · Ponto vermelho: data comemorativa · toque no dia para ver e planejar</div></div>
   <button class="p big" onclick="fEnc()">${ic('plus',20)} Nova encomenda</button>
+  <button class="big" onclick="fBloq()">${ic('lock',18)} Bloquear datas (folga, viagem...)</button>
+  ${bloqs.length?`<div class="chips" style="margin:6px 0 4px">${bloqs.map(b=>`<button onclick="apagarBloq('${b.id}')" title="Toque para remover">${ic('lock',14)} ${diaMes(b.ini)}${b.fim!==b.ini?'–'+diaMes(b.fim):''} ${esc(b.motivo)} ${ic('x',12)}</button>`).join('')}</div>`:''}
+  ${cardFestas(120,4)}
   <h3>${ic('cake',20)} Encomendas pendentes</h3>${pend.map(cardEnc).join('')||'<div class="vazio">Nada marcado ainda.</div>'}
   ${hist.length?`<h3>${ic('check',20)} Histórico</h3>${hist.map(cardEnc).join('')}`:''}`;
+}
+/* --- Agenda inteligente: capacidade, bloqueios, datas comemorativas, produção --- */
+const pesoEnc=e=>((S.receitas.find(r=>r.id===e.receitaId)||{}).pontos||1)*Math.max(1,e.qtd||1);
+const cargaDia=(iso,exceto)=>ativas().filter(e=>e.data===iso&&e.id!==exceto).reduce((s,e)=>s+pesoEnc(e),0);
+const bloqueioDe=iso=>S.bloqueios.find(b=>iso>=b.ini&&iso<=b.fim);
+function pascoa(y){ // algoritmo de Meeus/Jones/Butcher
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,
+    i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mes=Math.floor((h+l-7*m+114)/31),dia=((h+l-7*m+114)%31)+1;
+  return fmtISO(new Date(y,mes-1,dia));
+}
+function domingo(y,m,n){const d=new Date(y,m,1);d.setDate(1+((7-d.getDay())%7)+(n-1)*7);return fmtISO(d)} // n-ésimo domingo do mês (m começa em 0)
+const festasAno=y=>[[`${y}-06-12`,'Dia dos Namorados'],[domingo(y,4,2),'Dia das Mães'],[domingo(y,7,2),'Dia dos Pais'],[pascoa(y),'Páscoa'],[`${y}-10-12`,'Dia das Crianças'],[`${y}-12-25`,'Natal']];
+const festasDe=iso=>festasAno(+iso.slice(0,4)).filter(f=>f[0]===iso).map(f=>f[1]);
+function festasProx(dias){
+  const ini=hoje(),fim=addDias(ini,dias),y0=+ini.slice(0,4),y1=+fim.slice(0,4),l=[];
+  for(let y=y0;y<=y1;y++)festasAno(y).forEach(([iso,nome])=>{if(iso>=ini&&iso<=fim)l.push({iso,nome})});
+  return l.sort((a,b)=>a.iso.localeCompare(b.iso));
+}
+const diasAte=iso=>Math.round((new Date(iso+'T12:00')-new Date(hoje()+'T12:00'))/864e5);
+function cardFestas(dias,lim){
+  const l=festasProx(dias).slice(0,lim);if(!l.length)return'';
+  return`<h3>${ic('star',20)} Datas comemorativas</h3><div class="card">${l.map(f=>{
+    const n=ativas().filter(e=>e.data===f.iso).length,c=cargaDia(f.iso),d=diasAte(f.iso),cap=S.config.limiteDia;
+    return`<div class="alt clic" onclick="fDia('${f.iso}')"><div class="row"><b>${f.nome}</b><span class="tag">${d===0?'hoje':d===1?'amanhã':'em '+d+' dias'}</span></div>
+    <div class="muted">${diaMes(f.iso)} · ${n?n+' '+(n>1?'encomendas':'encomenda')+' · carga '+N(c)+' de '+N(cap):'nenhuma encomenda ainda'}${c>=cap-1e-9&&n?' · <span class="baixo">dia cheio</span>':''}</div>
+    ${d>=7&&d<=75&&c<cap?`<div class="muted">Vale abrir a agenda e divulgar com antecedência.</div>`:''}</div>`}).join('')}</div>`;
+}
+function proxLivre(peso,exceto){
+  let d=addDias(hoje(),Math.max(0,S.config.antecedencia||0));
+  for(let i=0;i<400;i++,d=addDias(d,1)){
+    if(bloqueioDe(d))continue;
+    if(cargaDia(d,exceto)+peso<=S.config.limiteDia+1e-9)return d;
+  }
+  return null;
+}
+function pesoForm(){const r=S.receitas.find(x=>x.id===v('e_rec'));return(r?r.pontos||1:1)*Math.max(1,Math.round(+v('e_qtd')||1))}
+function infoDia(){
+  const el=$('#e_info');if(!el)return;const d=v('e_data');if(!d){el.innerHTML='';return}
+  const cap=S.config.limiteDia,carga=cargaDia(d,encEd),peso=pesoForm(),bl=bloqueioDe(d),fs=festasDe(d),ant=S.config.antecedencia||0;
+  let h=`Carga do dia: <b>${N(carga)}</b> de ${N(cap)} pontos · esta encomenda: ${N(peso)}`;
+  if(carga+peso>cap+1e-9)h=`<span class="baixo">${h} — passa da capacidade</span>`;
+  if(bl)h+=`<br><span class="baixo">${ic('lock',14)} Dia bloqueado: ${esc(bl.motivo)}</span>`;
+  if(fs.length)h+=`<br>${ic('star',14)} Data comemorativa: ${fs.join(', ')}`;
+  if(ant>0&&d<addDias(hoje(),ant))h+=`<br><span class="baixo">Menos de ${ant} dia(s) de antecedência</span>`;
+  el.innerHTML=h;
+}
+function sugereData(){
+  const d=proxLivre(pesoForm(),encEd);
+  if(!d)return alert('Não encontrei data livre nos próximos 400 dias. Aumente a capacidade ou desbloqueie datas.');
+  $('#e_data').value=d;infoDia();
+}
+function fBloq(){
+  modal(`<h3>${ic('lock',22)} Bloquear datas</h3>
+  <div class="muted">Dias em que você não aceita encomendas (folga, viagem, feriado). O app avisa se alguém marcar nesses dias.</div>
+  ${campo('b_mot','Motivo','text','Folga')}
+  ${campo('b_ini','De','date',hoje())}
+  ${campo('b_fim','Até (pode ser o mesmo dia)','date',hoje())}
+  <div class="btns"><button class="p" onclick="salvarBloq()">Salvar</button><button onclick="fechar()">Cancelar</button></div>`);
+}
+function salvarBloq(){
+  const ini=v('b_ini'),fim=v('b_fim')||ini;
+  if(!ini||fim<ini)return alert('Escolha as datas: o fim não pode ser antes do início.');
+  S.bloqueios.push({id:uid(),ini,fim,motivo:v('b_mot').trim()||'Bloqueado'});salvar();fechar();render();
+}
+function apagarBloq(id){if(!confirm('Remover este bloqueio de datas?'))return;S.bloqueios=S.bloqueios.filter(b=>b.id!==id);salvar();render()}
+function toggleBloq(iso){
+  const b=bloqueioDe(iso);
+  if(b){if(b.ini!==b.fim&&!confirm(`Este dia faz parte do bloqueio ${diaMes(b.ini)}–${diaMes(b.fim)} (${b.motivo}). Remover o período todo?`))return;S.bloqueios=S.bloqueios.filter(x=>x.id!==b.id)}
+  else S.bloqueios.push({id:uid(),ini:iso,fim:iso,motivo:'Dia bloqueado'});
+  salvar();fechar();render();
+}
+function fDia(iso){
+  const es=ativas().filter(e=>e.data===iso).sort(cmp),carga=cargaDia(iso),cap=S.config.limiteDia,bl=bloqueioDe(iso),fs=festasDe(iso);
+  const titulo=new Date(iso+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
+  modal(`<h3>${ic('cal',22)} ${titulo.charAt(0).toUpperCase()+titulo.slice(1)}</h3>
+  <div class="btns" style="margin-top:0">${fs.map(f=>`<span class="tag">${ic('star',14)} ${f}</span>`).join('')}${bl?`<span class="tag est">${ic('lock',14)} ${esc(bl.motivo)}</span>`:''}<span class="tag ${carga>cap+1e-9?'est':'ok'}">carga ${N(carga)} de ${N(cap)}</span></div>
+  ${es.map(e=>{const r=S.receitas.find(x=>x.id===e.receitaId);return`<div class="card" style="margin-top:10px"><div class="row"><b>${esc(e.cliente)}</b><span class="tag">${esc(e.hora||'sem hora')}</span></div>
+    <div>${(e.qtd||1)>1?e.qtd+'× ':''}${esc(r?r.nome:(e.descricao||'Encomenda'))}</div><div class="muted">${e.status} · ${R(e.valor)}</div>
+    <div class="btns"><button onclick="fechar();fEnc('${e.id}')">${ic('edit',18)} Abrir</button></div></div>`}).join('')||'<div class="vazio">Nenhuma encomenda neste dia.</div>'}
+  <div class="btns"><button class="p" onclick="fechar();fEnc(null,'${iso}')">${ic('plus',18)} Nova encomenda</button>${es.some(e=>e.status==='pendente')?`<button onclick="fProd('${iso}')">${ic('list',18)} Lista de produção</button>`:''}<button onclick="toggleBloq('${iso}')">${ic('lock',18)} ${bl?'Desbloquear':'Bloquear dia'}</button><button onclick="fechar()">Fechar</button></div>`);
+}
+function necessidades(encs){
+  const need={},semRec=[];
+  encs.forEach(e=>{
+    const r=S.receitas.find(x=>x.id===e.receitaId);if(!r){semRec.push(e);return}
+    r.ingredientes.forEach(l=>{const it=S.itens.find(x=>x.id===l.itemId);if(it)need[it.id]=(need[it.id]||0)+l.qtd*(it.fc||1)*(e.qtd||1)});
+  });
+  return{need,semRec};
+}
+let prodDia=null;
+function prodDados(iso){
+  const es=S.encomendas.filter(e=>e.data===iso&&e.status==='pendente').sort(cmp),{need,semRec}=necessidades(es);
+  const rows=Object.keys(need).map(id=>{const it=S.itens.find(x=>x.id===id);return{it,n:need[id],falta:Math.max(0,need[id]-it.estoque)}}).sort((a,b)=>a.it.nome.localeCompare(b.it.nome));
+  return{es,rows,semRec};
+}
+function textoProd(iso){
+  const{es,rows}=prodDados(iso);
+  return`Produção de ${dataBR(iso)} - Mamãe de Açúcar\n\n`+es.map(e=>{const r=S.receitas.find(x=>x.id===e.receitaId);return`${e.hora||'--:--'} ${e.cliente}: ${(e.qtd||1)>1?e.qtd+'× ':''}${r?r.nome:(e.descricao||'encomenda')}${e.descricao&&r?' ('+e.descricao+')':''}`}).join('\n')
+    +(rows.length?`\n\nIngredientes:\n`+rows.map(x=>`• ${x.it.nome}: ${N(x.n)} ${x.it.unidade}${x.falta>0?' (falta '+N(x.falta)+')':''}`).join('\n'):'');
+}
+function fProd(iso){
+  prodDia=iso;const{es,rows,semRec}=prodDados(iso);
+  modal(`<h3 style="text-transform:capitalize">${ic('list',22)} Produção: ${dataBR(iso)}</h3>
+  ${es.map(e=>{const r=S.receitas.find(x=>x.id===e.receitaId);return`<div class="alt"><div class="row"><b>${esc(e.hora||'sem hora')} · ${esc(e.cliente)}</b><span class="tag">${(e.qtd||1)}×</span></div><div>${esc(r?r.nome:(e.descricao||'Encomenda'))}</div>${e.descricao&&r?`<div class="muted">${esc(e.descricao)}</div>`:''}${e.obs?`<div class="muted">${esc(e.obs)}</div>`:''}</div>`}).join('')||'<div class="vazio">Nenhuma encomenda pendente neste dia.</div>'}
+  ${semRec.length?`<div class="muted baixo" style="margin-top:6px">${semRec.length} sem receita cadastrada: não entram nos ingredientes.</div>`:''}
+  ${rows.length?`<h3>${ic('box',20)} Ingredientes do dia</h3>${rows.map(x=>`<div class="row" style="padding:5px 0"><span>${esc(x.it.nome)}</span><span><b>${N(x.n)} ${x.it.unidade}</b> ${x.falta>0?`<span class="tag est">falta ${N(x.falta)}</span>`:'<span class="tag ok">tem</span>'}</span></div>`).join('')}`:''}
+  <div class="btns"><button class="ok" onclick="window.open('https://wa.me/?text='+encodeURIComponent(textoProd(prodDia)),'_blank')">${ic('chat',18)} WhatsApp</button><button onclick="copiar(textoProd(prodDia))">${ic('copy',18)} Copiar</button><button onclick="fechar()">Fechar</button></div>`);
 }
 function mudaMes(n){mes=new Date(mes.getFullYear(),mes.getMonth()+n,1);render()}
 
@@ -554,7 +672,8 @@ function vAjustes(){
   ${f('c_perda','Perdas e desperdício (%)',c.perda,'Sobra na tigela, bolo que deu errado... 5% é comum.')}
   ${f('c_margem','Margem de lucro padrão (%)',c.margem,'100% = o preço é o dobro do custo.')}
   ${f('c_taxa','Taxa da maquininha / app (%)',c.taxa,'0 se receber só em Pix ou dinheiro.')}
-  ${f('c_lim','Máximo de encomendas por dia',c.limiteDia,'O sistema avisa quando passar disso.')}
+  ${f('c_lim','Capacidade de produção por dia (pontos)',c.limiteDia,'Cada receita vale uma quantidade de pontos (ex.: bolo grande 2, docinhos 1). O app avisa quando o dia passar disso.')}
+  ${f('c_ant','Antecedência mínima para encomendas (dias)',c.antecedencia||0,'0 = aceita para qualquer dia. O app avisa se marcarem com menos tempo.')}
   <button class="p big" onclick="salvarConfig()">Salvar</button></div>
   <div class="card"><b>${ic('pix',20)} Pix e cobrança do sinal</b>
   <div class="muted">Cadastre sua chave uma vez. Em cada encomenda, o botão Pix gera o QR code e o “copia e cola” com o valor certo.</div>
@@ -578,7 +697,7 @@ function vAjustes(){
 }
 function salvarConfig(){
   const g=id=>+v(id)||0;
-  S.config={...S.config,valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),custoForno:g('c_forno'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(1,g('c_lim'))};
+  S.config={...S.config,valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),custoForno:g('c_forno'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(0.5,g('c_lim')),antecedencia:Math.max(0,Math.round(g('c_ant')))};
   salvar();alert('Salvo!');render();
 }
 
@@ -649,6 +768,8 @@ function fRec(id){
   ${campo('r_rend','Quantas fatias/porções rende','number',r.rendimento,'oninput="prev()"')}
   ${campo('r_min','Tempo total de trabalho (minutos)','number',r.minutos,'oninput="prev()"')}
   ${campo('r_forno','Tempo de forno/fogão ligado (minutos)','number',r.forno||0,'oninput="prev()"')}
+  ${campo('r_pts','Pontos de produção (peso desta receita no dia)','number',r.pontos||1)}
+  <div class="muted">A capacidade do dia é medida em pontos. Ex.: bolo grande = 2, docinhos = 1.</div>
   ${campo('r_margem','Margem de lucro % (deixe vazio para usar a padrão)','number',r.margem,'oninput="prev()"')}
   <label>Ingredientes e embalagens usados</label><div id="rows"></div>
   <button style="margin-top:8px" onclick="rowAdd()">${ic('plus',18)} Adicionar ingrediente</button>
@@ -686,7 +807,7 @@ function prev(){
 }
 function salvarRec(){
   const nome=v('r_nome').trim();if(!nome)return alert('Dê um nome para a receita.');
-  const o={nome,rendimento:+v('r_rend')||1,minutos:+v('r_min')||0,forno:+v('r_forno')||0,margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)};
+  const o={nome,rendimento:+v('r_rend')||1,minutos:+v('r_min')||0,forno:+v('r_forno')||0,pontos:Math.max(0.5,+v('r_pts')||1),margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)};
   if(ed.id)Object.assign(S.receitas.find(x=>x.id===ed.id),o);else S.receitas.push({id:uid(),...o});
   salvar();fechar();render();
 }
@@ -699,18 +820,21 @@ function fEnc(id,dataPre){
   modal(`<h3>${id?'Editar':'Nova'} encomenda</h3>
   ${campo('e_cli','Nome da cliente','text',e.cliente)}
   ${campo('e_tel','WhatsApp (com DDD)','tel',e.tel)}
-  ${sel('e_rec','Produto',[['','Outro / personalizado'],...S.receitas.map(r=>[r.id,r.nome])],e.receitaId,'onchange="escolheProd()"')}
-  ${campo('e_qtd','Quantidade (quantos bolos/receitas iguais)','number',e.qtd||1,'oninput="escolheProd()"')}
+  ${sel('e_rec','Produto',[['','Outro / personalizado'],...S.receitas.map(r=>[r.id,r.nome])],e.receitaId,'onchange="escolheProd();infoDia()"')}
+  ${campo('e_qtd','Quantidade (quantos bolos/receitas iguais)','number',e.qtd||1,'oninput="escolheProd();infoDia()"')}
   ${campo('e_desc','Detalhes (sabor, tema, escrita no bolo...)','text',e.descricao)}
-  ${campo('e_data','Data da entrega','date',e.data)}
+  ${campo('e_data','Data da entrega','date',e.data,'onchange="infoDia()" oninput="infoDia()"')}
+  <div id="e_info" class="muted" style="margin-top:6px"></div>
+  <button style="margin-top:6px" onclick="sugereData()">${ic('cal',18)} Sugerir próxima data livre</button>
   ${campo('e_hora','Hora','time',e.hora)}
   ${campo('e_valor','Valor combinado (R$)','number',e.valor)}
   ${campo('e_sinal','Sinal já pago (R$)','number',e.sinal)}
   ${campo('e_obs','Observações','text',e.obs)}
   <div class="btns"><button class="p" onclick="salvarEnc('${id||''}')">Salvar</button><button onclick="fechar()">Cancelar</button>
   ${id?`<button class="del" onclick="cancelarEnc('${id}')">Cancelar pedido</button>`:''}</div>`);
+  encEd=id||null;infoDia();
 }
-let ultAuto=null;
+let ultAuto=null,encEd=null;
 function escolheProd(){
   const r=S.receitas.find(x=>x.id===v('e_rec'));if(!r)return;
   const atual=v('e_valor'),novo=(custo(r).preco*(Math.max(1,+v('e_qtd')||1))).toFixed(2);
@@ -720,11 +844,15 @@ function escolheProd(){
 function salvarEnc(id){
   const o={cliente:v('e_cli').trim(),tel:v('e_tel').trim(),receitaId:v('e_rec'),descricao:v('e_desc').trim(),data:v('e_data'),hora:v('e_hora'),valor:+v('e_valor')||0,sinal:+v('e_sinal')||0,obs:v('e_obs').trim(),qtd:Math.max(1,Math.round(+v('e_qtd')||1))};
   if(!o.cliente||!o.data)return alert('Preencha o nome da cliente e a data.');
-  const mesmoDia=ativas().filter(x=>x.data===o.data&&x.id!==id);
-  if(mesmoDia.length>=S.config.limiteDia){
-    const quem=mesmoDia.map(x=>x.cliente).join(', ');
-    if(!confirm(`⚠️ Já existe encomenda nesse dia (${quem}). O limite é ${S.config.limiteDia} por dia.\n\nMarcar mesmo assim?`))return;
+  const avisos=[],antigo=id?S.encomendas.find(x=>x.id===id):null,mudouData=!antigo||antigo.data!==o.data;
+  const bl=bloqueioDe(o.data);if(bl&&mudouData)avisos.push(`Esse dia está bloqueado (${bl.motivo}).`);
+  const ant=S.config.antecedencia||0;if(ant>0&&mudouData&&o.data<addDias(hoje(),ant))avisos.push(`Você definiu pelo menos ${ant} dia(s) de antecedência para encomendas.`);
+  const cap=S.config.limiteDia,peso=pesoEnc(o),outros=cargaDia(o.data,id);
+  if(mudouData||!antigo||pesoEnc(antigo)!==peso){
+    if(outros+peso>cap+1e-9){const quem=ativas().filter(x=>x.data===o.data&&x.id!==id).map(x=>x.cliente).join(', ');
+      avisos.push(`A capacidade do dia é ${N(cap)} pontos. Com esta encomenda ficaria em ${N(outros+peso)}${quem?' (já tem: '+quem+')':''}.`)}
   }
+  if(avisos.length&&!confirm('⚠️ '+avisos.join('\n')+'\n\nMarcar mesmo assim?'))return;
   if(id)Object.assign(S.encomendas.find(x=>x.id===id),o);else S.encomendas.push({id:uid(),status:'pendente',baixa:false,...o});
   salvar();fechar();render();
 }
