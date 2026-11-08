@@ -1,12 +1,12 @@
 {
-  "name": "Doce Gestão",
-  "short_name": "Doce Gestão",
-  "description": "Preços, estoque e agenda de encomendas para confeiteira",
+  "name": "Mamãe de Açúcar — Gestão",
+  "short_name": "Mamãe Açúcar",
+  "description": "Preços, estoque, agenda de encomendas e comparação de preços para a confeitaria Mamãe de Açúcar",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#faf6f7",
-  "theme_color": "#d6336c",
+  "background_color": "#fff1f3",
+  "theme_color": "#e3485f",
   "lang": "pt-BR",
   "icons": [
     {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},

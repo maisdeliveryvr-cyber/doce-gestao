@@ -1,5 +1,5 @@
-const C = 'doce-gestao-v1';
-const ARQ = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
+const C = 'mamae-acucar-v2';
+const ARQ = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png', 'logo.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(C).then(c => c.addAll(ARQ)));
