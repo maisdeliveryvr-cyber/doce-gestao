@@ -248,8 +248,9 @@ const ABAS=[['inicio','home','Início'],['agenda','cal','Agenda'],['receitas','c
 let aba='inicio',mes=new Date(),ed=null,bq='',bm='';
 function go(a){aba=a;render();scrollTo(0,0)}
 function render(){
-  $('#nav').innerHTML=ABAS.map(([k,i,t])=>`<button class="${k===aba?'on':''}" onclick="go('${k}')">${ic(i)}${t}</button>`).join('');
-  $('#app').innerHTML=({inicio:vInicio,agenda:vAgenda,receitas:vReceitas,estoque:vEstoque,mercado:vMercado,ajustes:vAjustes})[aba]();
+  const ativa=aba==='compras'?'estoque':aba;
+  $('#nav').innerHTML=ABAS.map(([k,i,t])=>`<button class="${k===ativa?'on':''}" onclick="go('${k}')">${ic(i)}${t}</button>`).join('');
+  $('#app').innerHTML=({inicio:vInicio,agenda:vAgenda,receitas:vReceitas,estoque:vEstoque,mercado:vMercado,ajustes:vAjustes,compras:vCompras})[aba]();
 }
 
 function cardEnc(e){
@@ -291,6 +292,7 @@ function vInicio(){
   <h3>${ic('cal',20)} Amanhã</h3>${amL.map(cardEnc).join('')||'<div class="vazio">Nenhuma entrega amanhã.</div>'}
   ${prox.length?`<h3>${ic('cake',20)} Próximas</h3>${prox.map(cardEnc).join('')}`:''}
   ${baixo.length?`<h3>${ic('cart',20)} Comprar logo</h3><div class="card alerta">${baixo.map(i=>`<div class="row"><span>${esc(i.nome)}</span><span class="baixo">${N(i.estoque)} ${i.unidade}</span></div>`).join('')}</div>`:''}
+  <button class="big" onclick="go('compras')">${ic('cart',20)} Lista de compras</button>
   <button class="p big" onclick="fEnc()">${ic('plus',20)} Nova encomenda</button>`;
 }
 
@@ -341,6 +343,7 @@ function listaEst(){
 }
 function vEstoque(){
   return`<button class="p big" onclick="fItem()">${ic('plus',20)} Novo item</button>
+  <button class="big" onclick="go('compras')">${ic('cart',20)} Lista de compras</button>
   <div class="dica">${ic('spark',20)}<div>Os preços marcados como <b>estimado</b> são de referência. Toque em <b>Editar</b> ou <b>Comprei</b> para colocar o preço real que você paga.</div></div>
   <div class="busca">${ic('search',20)}<input id="busca" placeholder="Buscar ingrediente ou embalagem..." value="${esc(bq)}" oninput="bq=this.value;$('#lista').innerHTML=listaEst()"></div>
   <div id="lista">${listaEst()}</div>
@@ -370,6 +373,60 @@ function listaMer(){
   const chips=sem.length?`<h3>${ic('search',20)} Ainda sem pesquisa</h3><div class="chips">${sem.map(i=>`<button onclick="fCot('${i.id}')">${esc(i.nome)}</button>`).join('')}</div>`:'';
   return(cards||'<div class="vazio">Nenhum preço anotado ainda'+(q?' para essa busca':'')+'.</div>')+chips;
 }
+/* --- Lista de compras --- */
+let cmpDias=7;
+function calcCompras(dias){
+  const lim=dias?addDias(hoje(),dias):'9999-12-31';
+  const encs=S.encomendas.filter(e=>e.status==='pendente'&&e.data<=lim).sort(cmp);
+  const need={},semRec=[];
+  encs.forEach(e=>{
+    const r=S.receitas.find(x=>x.id===e.receitaId);
+    if(!r){semRec.push(e);return}
+    r.ingredientes.forEach(l=>{need[l.itemId]=(need[l.itemId]||0)+l.qtd});
+  });
+  const rows=[];
+  S.itens.forEach(it=>{
+    const n=need[it.id]||0,sobra=it.estoque-n,repor=it.minimo>0&&sobra<=it.minimo;
+    let falta=Math.max(0,n-it.estoque),motivo=n>it.estoque?'encomendas':'';
+    if(repor){falta=Math.max(falta,it.minimo-sobra);if(!motivo)motivo='estoque baixo'}
+    if(!motivo)return;
+    const packs=Math.max(1,Math.ceil(falta/it.qtdPacote-1e-9));
+    const melhor=cotsDe(it.id)[0],barato=melhor&&melhor.base<baseItem(it)*0.995?melhor:null;
+    rows.push({it,n,falta,packs,motivo,custo:packs*it.preco,barato});
+  });
+  rows.sort((a,b)=>a.it.nome.localeCompare(b.it.nome));
+  return{encs,semRec,rows,total:rows.reduce((s,r)=>s+r.custo,0)};
+}
+function textoCompras(){
+  const c=calcCompras(cmpDias),f=r=>`• ${r.it.nome}: ${r.packs} ${r.packs>1?'pacotes':'pacote'} (${N(r.it.qtdPacote)} ${r.it.unidade})`;
+  const bl=(t,l)=>l.length?`*${t}*\n${l.map(f).join('\n')}\n\n`:'';
+  return`Lista de compras - Mamãe de Açúcar\n${cmpDias?'Próximos '+cmpDias+' dias':'Todas as encomendas pendentes'}\n\n`
+    +bl('Ingredientes',c.rows.filter(r=>r.it.tipo==='insumo'))+bl('Embalagens',c.rows.filter(r=>r.it.tipo!=='insumo'))
+    +`Total estimado: ${R(c.total)}`;
+}
+function setCmp(d){cmpDias=d;render()}
+function vCompras(){
+  const c=calcCompras(cmpDias),opcoes=[[7,'7 dias'],[14,'14 dias'],[30,'30 dias'],[0,'Tudo']];
+  const bloco=(t,l,icone)=>l.length?`<h3>${ic(icone,20)} ${t}</h3>${l.map(r=>{const it=r.it;return`<div class="card ${r.motivo==='encomendas'?'':'alerta'}">
+    <div class="row"><b>${esc(it.nome)}</b><span class="tag">${r.packs} ${r.packs>1?'pacotes':'pacote'}</span></div>
+    <div class="muted">${r.n>0?'precisa '+N(r.n)+' '+it.unidade+' · ':''}tem ${N(it.estoque)} ${it.unidade} · pacote de ${N(it.qtdPacote)} ${it.unidade} (≈ ${R(r.custo)})</div>
+    <div class="btns" style="margin-top:6px"><span class="tag ${r.motivo==='encomendas'?'':'est'}">${r.motivo}</span>${r.barato?`<span class="tag ok">${ic('star',14)} ${esc(r.barato.loja)} ${R(r.barato.base)}/${lbl(it)}</span>`:''}<button onclick="fCompra('${it.id}',${r.packs})">${ic('check',18)} Comprei</button></div></div>`}).join('')}`:'';
+  return`<div class="row" style="margin-bottom:10px"><b style="font-size:19px;color:var(--rosa-esc)">${ic('cart',22)} Lista de compras</b><button onclick="go('estoque')">Voltar</button></div>
+  <div class="chips" style="margin-bottom:12px">${opcoes.map(([d,t])=>`<button class="${d===cmpDias?'p':''}" onclick="setCmp(${d})">${t}</button>`).join('')}</div>
+  <div class="grid"><div class="stat forte"><div class="muted">Total estimado</div><div class="num">${R(c.total)}</div></div><div class="stat"><div class="muted">Itens para comprar</div><div class="num">${c.rows.length}</div></div></div>
+  <div class="dica" style="margin-top:12px">${ic('cake',20)}<div>${c.encs.length?`Baseada em <b>${c.encs.length} ${c.encs.length>1?'encomendas':'encomenda'}</b> ${cmpDias?'nos próximos '+cmpDias+' dias':'pendentes'}: ${c.encs.slice(0,4).map(e=>esc(e.cliente)+' ('+diaMes(e.data)+')').join(', ')}${c.encs.length>4?' e mais '+(c.encs.length-4):''}.`:'Nenhuma encomenda nesse período, então só entram itens com estoque abaixo do mínimo.'} Usa a quantidade de cada receita para 1 pedido.</div></div>
+  ${c.semRec.length?`<div class="card ruim"><b>${ic('warn',18)} ${c.semRec.length} ${c.semRec.length>1?'encomendas sem':'encomenda sem'} receita</b><div class="muted">${c.semRec.map(e=>esc(e.cliente)).join(', ')} — escolha um produto em <b>Preços</b> na encomenda para entrar na lista.</div></div>`:''}
+  ${bloco('Ingredientes',c.rows.filter(r=>r.it.tipo==='insumo'),'cake')}${bloco('Embalagens',c.rows.filter(r=>r.it.tipo!=='insumo'),'box')}
+  ${c.rows.length?`<div class="btns"><button class="ok" onclick="zapCompras()">${ic('chat',18)} WhatsApp</button><button onclick="copiar(textoCompras())">${ic('copy',18)} Copiar</button><button onclick="shareCompras()">${ic('share',18)} Compartilhar</button></div>`
+  :`<div class="vazio">${ic('check',28)}<br>Nada para comprar nesse período.</div>`}`;
+}
+function zapCompras(){window.open('https://wa.me/?text='+encodeURIComponent(textoCompras()),'_blank')}
+async function shareCompras(){
+  const t=textoCompras();
+  if(navigator.share){try{await navigator.share({title:'Lista de compras',text:t})}catch(e){}}
+  else copiar(t);
+}
+
 /* --- Histórico de preços --- */
 const snapPreco=it=>({preco:it.preco,qtd:it.qtdPacote,data:it.pd||addDias(hoje(),-1)});
 const hist=id=>S.historico.filter(x=>x.itemId===id).sort((a,b)=>a.data.localeCompare(b.data)||(a.t||0)-(b.t||0));
@@ -543,10 +600,10 @@ function apagarItem(id){
   S.receitas.forEach(r=>r.ingredientes=r.ingredientes.filter(i=>i.itemId!==id));
   salvar();fechar();render();
 }
-function fCompra(id){
+function fCompra(id,n){
   const i=S.itens.find(x=>x.id===id);
   modal(`<h3>Comprei: ${esc(i.nome)}</h3>
-  ${campo('b_n','Quantos pacotes comprei','number',1)}
+  ${campo('b_n','Quantos pacotes comprei','number',n||1)}
   ${campo('b_p','Preço de cada pacote (R$)','number',i.preco)}
   <div class="muted">O preço novo atualiza o cálculo das suas receitas.</div>
   <div class="btns"><button class="p" onclick="salvarCompra('${id}')">Salvar</button><button onclick="fechar()">Cancelar</button></div>`);
