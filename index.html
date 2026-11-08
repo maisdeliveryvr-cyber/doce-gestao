@@ -85,7 +85,7 @@ input:focus,select:focus{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(227,
 #modal .box{background:linear-gradient(180deg,#fff,#fff7f8);max-width:560px;margin:18px auto;border-radius:26px;padding:18px;box-shadow:0 30px 60px -20px rgba(80,0,20,.7),0 2px 0 #fff inset;animation:modal .28s cubic-bezier(.2,.9,.3,1.1) both}
 @keyframes modal{from{opacity:0;transform:translateY(30px) scale(.96)}to{opacity:1;transform:none}}
 #modal h3{margin-top:0;font-size:18px}
-.lin{display:grid;grid-template-columns:1fr 84px 30px 36px;gap:6px;align-items:center;margin-top:6px}
+.lin{display:grid;grid-template-columns:1fr 62px 82px 36px;gap:6px;align-items:center;margin-top:6px}
 .lin button.x{padding:7px;color:var(--ruim)}
 .preco{background:linear-gradient(145deg,#fff0f3,#ffd9e0);border-radius:18px;padding:14px;margin-top:14px;box-shadow:0 1px 0 #fff inset,0 10px 20px -12px rgba(179,18,58,.5)}
 .preco .gd{font-size:30px;font-weight:800;color:var(--rosa-esc)}
@@ -180,11 +180,23 @@ const BASICOS=[
  ['Caixa para docinhos','embalagem','un',15,10],['Pote 250 ml com tampa','embalagem','un',12,10],['Sacola de papel','embalagem','un',12,10],
  ['Fita de cetim (rolo)','embalagem','un',8,1],['Etiqueta adesiva','embalagem','un',10,50],['Papel manteiga (rolo)','embalagem','un',9,1]
 ];
+// Valores aproximados (tabelas de xícara divergem, ex.: farinha 120 a 144 g) — a confeiteira pode editar em cada item.
+const EXTRA={'Morango':{fc:1.15},'Farinha de trigo':{xic:120},'Açúcar refinado':{xic:180},'Açúcar de confeiteiro':{xic:120},
+  'Chocolate em pó 50%':{xic:90},'Cacau em pó':{xic:90},'Amido de milho':{xic:150},'Coco ralado':{xic:80},'Leite em pó':{xic:120}};
+function completaExtras(){
+  S.itens.forEach(it=>{const e=EXTRA[it.nome];if(e&&it.xic===undefined&&it.fc===undefined)Object.assign(it,e)});
+}
+const medidas=it=>{
+  if(it.unidade==='g'){const x=+it.xic||0;return x>0?[['b','g',1],['xic','xíc.',x],['cs','c. sopa',x/16],['cc','c. chá',x/48]]:[['b','g',1]]}
+  if(it.unidade==='ml')return[['b','ml',1],['xic','xíc.',240],['cs','c. sopa',15],['cc','c. chá',5]];
+  return[['b','un',1]];
+};
+const fatorMed=(it,m)=>{const f=it?medidas(it).find(x=>x[0]===m):null;return f?f[2]:1};
 const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces'];
 
 /* ===== Dados ===== */
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
-const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],seedV:0,ultBackup:''};
+const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,custoForno:2,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],seedV:0,ultBackup:''};
 let S=carregar();
 function carregar(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
@@ -200,7 +212,7 @@ async function idbSet(t){try{const d=await idb();d.transaction('k','readwrite').
 async function idbGet(){try{const d=await idb();return await new Promise(ok=>{const q=d.transaction('k').objectStore('k').get('S');q.onsuccess=()=>ok(q.result);q.onerror=()=>ok(null)})}catch(e){return null}}
 function basicos(){
   const tem=new Set(S.itens.map(i=>i.nome.toLowerCase()));let n=0;
-  BASICOS.forEach(([nome,tipo,un,preco,pac])=>{if(tem.has(nome.toLowerCase()))return;S.itens.push({id:uid(),nome,tipo,unidade:un,preco,qtdPacote:pac,estoque:0,minimo:0,ref:true,pd:hoje()});n++});
+  BASICOS.forEach(([nome,tipo,un,preco,pac])=>{if(tem.has(nome.toLowerCase()))return;S.itens.push({id:uid(),nome,tipo,unidade:un,preco,qtdPacote:pac,estoque:0,minimo:0,ref:true,pd:hoje(),...(EXTRA[nome]||{})});n++});
   return n;
 }
 
@@ -228,19 +240,25 @@ const baseCot=(c,it)=>c.qtd>0?c.preco/c.qtd*mult(it):0;
 
 /* ===== Cálculo do preço ===== */
 function custo(r){
-  const c=S.config;let ing=0;
+  const c=S.config;let ins=0,emb=0;
   (r.ingredientes||[]).forEach(i=>{
     const it=S.itens.find(x=>x.id===i.itemId);
-    if(it&&it.qtdPacote>0)ing+=i.qtd*it.preco/it.qtdPacote;
+    if(it&&it.qtdPacote>0){
+      // custo sobre a quantidade BRUTA comprada: uso x fator de correção
+      const val=i.qtd*(it.fc||1)*it.preco/it.qtdPacote;
+      if(it.tipo==='embalagem')emb+=val;else ins+=val;
+    }
   });
-  const perda=ing*c.perda/100;
+  const ing=ins+emb;
+  const perda=ins*c.perda/100; // desperdício só nos ingredientes, não nas embalagens
   const mao=(+r.minutos||0)/60*c.valorHora;
+  const gas=(+r.forno||0)/60*(+c.custoForno||0);
   const fixo=c.bolosMes>0?c.custosFixosMes/c.bolosMes:0;
-  const total=ing+perda+mao+fixo;
+  const total=ing+perda+mao+gas+fixo;
   const margem=(r.margem===''||r.margem==null)?c.margem:+r.margem;
   const preco=total*(1+margem/100)/(1-c.taxa/100);
   const lucro=preco-preco*c.taxa/100-total;
-  return{ing,perda,mao,fixo,total,margem,preco,lucro};
+  return{ing,ins,emb,perda,mao,gas,fixo,total,margem,preco,lucro};
 }
 
 /* ===== Telas ===== */
@@ -259,7 +277,7 @@ function cardEnc(e){
   const atrasada=e.status==='pendente'&&e.data<hoje();
   return`<div class="card ${atrasada?'ruim':''}">
     <div class="row"><b>${esc(e.cliente)}</b><span class="tag">${dataBR(e.data)} ${esc(e.hora||'')}</span></div>
-    <div>${esc(nome)}${r&&e.descricao?' — '+esc(e.descricao):''}</div>
+    <div>${(e.qtd||1)>1?(e.qtd)+'× ':''}${esc(nome)}${r&&e.descricao?' — '+esc(e.descricao):''}</div>
     <div class="muted">${R(e.valor)} · sinal ${R(e.sinal)} · falta receber <b>${R(e.valor-e.sinal)}</b></div>
     ${e.obs?`<div class="muted">${esc(e.obs)}</div>`:''}
     ${atrasada?`<div class="baixo" style="margin-top:6px">${ic('warn',16)} Data já passou — marque como entregue ou edite.</div>`:''}
@@ -382,7 +400,7 @@ function calcCompras(dias){
   encs.forEach(e=>{
     const r=S.receitas.find(x=>x.id===e.receitaId);
     if(!r){semRec.push(e);return}
-    r.ingredientes.forEach(l=>{need[l.itemId]=(need[l.itemId]||0)+l.qtd});
+    r.ingredientes.forEach(l=>{const it=S.itens.find(x=>x.id===l.itemId);need[l.itemId]=(need[l.itemId]||0)+l.qtd*(it?it.fc||1:1)*(e.qtd||1)});
   });
   const rows=[];
   S.itens.forEach(it=>{
@@ -414,7 +432,7 @@ function vCompras(){
   return`<div class="row" style="margin-bottom:10px"><b style="font-size:19px;color:var(--rosa-esc)">${ic('cart',22)} Lista de compras</b><button onclick="go('estoque')">Voltar</button></div>
   <div class="chips" style="margin-bottom:12px">${opcoes.map(([d,t])=>`<button class="${d===cmpDias?'p':''}" onclick="setCmp(${d})">${t}</button>`).join('')}</div>
   <div class="grid"><div class="stat forte"><div class="muted">Total estimado</div><div class="num">${R(c.total)}</div></div><div class="stat"><div class="muted">Itens para comprar</div><div class="num">${c.rows.length}</div></div></div>
-  <div class="dica" style="margin-top:12px">${ic('cake',20)}<div>${c.encs.length?`Baseada em <b>${c.encs.length} ${c.encs.length>1?'encomendas':'encomenda'}</b> ${cmpDias?'nos próximos '+cmpDias+' dias':'pendentes'}: ${c.encs.slice(0,4).map(e=>esc(e.cliente)+' ('+diaMes(e.data)+')').join(', ')}${c.encs.length>4?' e mais '+(c.encs.length-4):''}.`:'Nenhuma encomenda nesse período, então só entram itens com estoque abaixo do mínimo.'} Usa a quantidade de cada receita para 1 pedido.</div></div>
+  <div class="dica" style="margin-top:12px">${ic('cake',20)}<div>${c.encs.length?`Baseada em <b>${c.encs.length} ${c.encs.length>1?'encomendas':'encomenda'}</b> ${cmpDias?'nos próximos '+cmpDias+' dias':'pendentes'}: ${c.encs.slice(0,4).map(e=>esc(e.cliente)+' ('+diaMes(e.data)+')').join(', ')}${c.encs.length>4?' e mais '+(c.encs.length-4):''}.`:'Nenhuma encomenda nesse período, então só entram itens com estoque abaixo do mínimo.'} A conta usa a receita multiplicada pela quantidade de cada encomenda e já inclui a perda na limpeza.</div></div>
   ${c.semRec.length?`<div class="card ruim"><b>${ic('warn',18)} ${c.semRec.length} ${c.semRec.length>1?'encomendas sem':'encomenda sem'} receita</b><div class="muted">${c.semRec.map(e=>esc(e.cliente)).join(', ')} — escolha um produto em <b>Preços</b> na encomenda para entrar na lista.</div></div>`:''}
   ${bloco('Ingredientes',c.rows.filter(r=>r.it.tipo==='insumo'),'cake')}${bloco('Embalagens',c.rows.filter(r=>r.it.tipo!=='insumo'),'box')}
   ${c.rows.length?`<div class="btns"><button class="ok" onclick="zapCompras()">${ic('chat',18)} WhatsApp</button><button onclick="copiar(textoCompras())">${ic('copy',18)} Copiar</button><button onclick="shareCompras()">${ic('share',18)} Compartilhar</button></div>`
@@ -448,7 +466,7 @@ function impacto(it,v){
   const c=S.config;
   return S.receitas.map(r=>{
     const l=r.ingredientes.find(i=>i.itemId===it.id);if(!l)return null;
-    const d=l.qtd*(v.u.base-v.a.base)/mult(it)*(1+c.perda/100),k=custo(r);
+    const d=l.qtd*(it.fc||1)*(v.u.base-v.a.base)/mult(it)*(it.tipo==='embalagem'?1:1+c.perda/100),k=custo(r);
     return{nome:r.nome,custo:d,preco:d*(1+k.margem/100)/(1-c.taxa/100)};
   }).filter(Boolean);
 }
@@ -530,7 +548,8 @@ function vAjustes(){
   const f=(id,l,val,dica)=>`<label>${l}</label><input id="${id}" type="number" step="any" inputmode="decimal" value="${val}">${dica?`<div class="muted">${dica}</div>`:''}`;
   return`<div class="card"><b>${ic('sliders',20)} Como o preço é calculado</b>
   ${f('c_hora','Quanto vale a sua hora de trabalho (R$)',c.valorHora,'Quanto você quer ganhar por hora.')}
-  ${f('c_fixo','Gastos fixos por mês (R$)',c.custosFixosMes,'Gás, luz, água, internet, aluguel, etc.')}
+  ${f('c_fixo','Gastos fixos por mês (R$)',c.custosFixosMes,'Aluguel, internet, água, luz da casa etc. Não repita aqui o gás/luz do forno: ele vai no campo abaixo.')}
+  ${f('c_forno','Gás/energia: custo por hora de forno ou fogão ligado (R$)',c.custoForno,'Exemplo: botijão de R$ 120 que dura cerca de 60 horas ≈ R$ 2 por hora. Faça a sua conta com gás ou luz e ajuste.')}
   ${f('c_bolos','Quantos bolos faz por mês (média)',c.bolosMes,'Os gastos fixos são divididos por esse número.')}
   ${f('c_perda','Perdas e desperdício (%)',c.perda,'Sobra na tigela, bolo que deu errado... 5% é comum.')}
   ${f('c_margem','Margem de lucro padrão (%)',c.margem,'100% = o preço é o dobro do custo.')}
@@ -559,7 +578,7 @@ function vAjustes(){
 }
 function salvarConfig(){
   const g=id=>+v(id)||0;
-  S.config={...S.config,valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(1,g('c_lim'))};
+  S.config={...S.config,valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),custoForno:g('c_forno'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(1,g('c_lim'))};
   salvar();alert('Salvo!');render();
 }
 
@@ -579,12 +598,16 @@ function fItem(id){
   ${campo('i_preco','Quanto paguei no pacote (R$)','number',i.preco)}
   ${campo('i_pac','Quanto vem no pacote (em g, ml ou un)','number',i.qtdPacote)}
   <div class="muted">Ex: pacote de 1 kg = 1000 · caixa com 30 ovos = 30 · lata de 395 g = 395</div>
+  ${campo('i_fc','Fator de correção (1 = sem perda na limpeza)','number',i.fc||1)}
+  <div class="muted">Se você descarta parte do que compra (cabinho do morango, casca...), use mais que 1. Ex: 1,15 = você paga 15% a mais do que usa.</div>
+  ${campo('i_xic','1 xícara pesa quantas gramas? (opcional, só para itens em g)','number',i.xic||'')}
+  <div class="muted">Com isso você pode usar xícara e colher na receita. As tabelas variam (farinha: 120 a 144 g), então ajuste ao seu jeito de medir.</div>
   ${campo('i_est','Quanto tenho agora','number',i.estoque)}
   ${campo('i_min','Avisar quando tiver menos de (0 = não avisar)','number',i.minimo)}
   <div class="btns"><button class="p" onclick="salvarItem('${id||''}')">Salvar</button><button onclick="fechar()">Cancelar</button>${id?`<button class="del" onclick="apagarItem('${id}')">Apagar</button>`:''}</div>`);
 }
 function salvarItem(id){
-  const o={nome:v('i_nome').trim(),tipo:v('i_tipo'),unidade:v('i_un'),preco:+v('i_preco')||0,qtdPacote:+v('i_pac')||0,estoque:+v('i_est')||0,minimo:+v('i_min')||0};
+  const o={nome:v('i_nome').trim(),tipo:v('i_tipo'),unidade:v('i_un'),preco:+v('i_preco')||0,qtdPacote:+v('i_pac')||0,estoque:+v('i_est')||0,minimo:+v('i_min')||0,fc:Math.max(1,+v('i_fc')||1),xic:Math.max(0,+v('i_xic')||0)};
   if(!o.nome||o.qtdPacote<=0)return alert('Preencha o nome e quanto vem no pacote.');
   if(id){const it=S.itens.find(x=>x.id===id),antes=snapPreco(it),mudou=o.preco!==it.preco||o.qtdPacote!==it.qtdPacote;
     if(mudou)delete it.ref;Object.assign(it,o);if(mudou&&o.preco>0)logPreco(it,'ajuste manual',antes)}
@@ -625,6 +648,7 @@ function fRec(id){
   ${campo('r_nome','Nome (ex: Bolo de chocolate 2kg)','text',r.nome)}
   ${campo('r_rend','Quantas fatias/porções rende','number',r.rendimento,'oninput="prev()"')}
   ${campo('r_min','Tempo total de trabalho (minutos)','number',r.minutos,'oninput="prev()"')}
+  ${campo('r_forno','Tempo de forno/fogão ligado (minutos)','number',r.forno||0,'oninput="prev()"')}
   ${campo('r_margem','Margem de lucro % (deixe vazio para usar a padrão)','number',r.margem,'oninput="prev()"')}
   <label>Ingredientes e embalagens usados</label><div id="rows"></div>
   <button style="margin-top:8px" onclick="rowAdd()">${ic('plus',18)} Adicionar ingrediente</button>
@@ -636,28 +660,33 @@ function rowsDraw(){
   const ordem=[...S.itens].sort((a,b)=>a.nome.localeCompare(b.nome));
   $('#rows').innerHTML=ed.rows.map((r,i)=>{
     const it=S.itens.find(x=>x.id===r.itemId);
+    const m=r.m||'b',n=r.n!==undefined?r.n:r.qtd,eq=it&&m!=='b'?` ≈ ${N(r.qtd)} ${it.unidade}${(it.fc||1)>1?' (com perda na limpeza: '+N(r.qtd*it.fc)+')':''}`:'';
     return`<div class="lin"><select onchange="rowSel(${i},this.value)"><option value="">Escolha...</option>${ordem.map(x=>`<option value="${x.id}" ${x.id===r.itemId?'selected':''}>${esc(x.nome)}</option>`).join('')}</select>
-    <input type="number" step="any" inputmode="decimal" value="${r.qtd||''}" placeholder="qtd" oninput="rowQtd(${i},this.value)"><span>${it?it.unidade:''}</span><button class="x" onclick="rowDel(${i})">${ic('x',16)}</button></div>`;
+    <input type="number" step="any" inputmode="decimal" value="${n||''}" placeholder="qtd" oninput="rowQtd(${i},this.value)" onchange="rowsDraw()"><select onchange="rowMed(${i},this.value)">${(it?medidas(it):[['b','',1]]).map(([k,t])=>`<option value="${k}" ${k===m?'selected':''}>${t}</option>`).join('')}</select><button class="x" onclick="rowDel(${i})">${ic('x',16)}</button>${eq?`<div class="muted" style="grid-column:1/-1;margin:0 0 4px">${eq}</div>`:''}</div>`;
   }).join('');
 }
-function rowAdd(){ed.rows.push({itemId:'',qtd:0});rowsDraw()}
-function rowSel(i,val){ed.rows[i].itemId=val;rowsDraw();prev()}
-function rowQtd(i,val){ed.rows[i].qtd=+val||0;prev()}
+function rowAdd(){ed.rows.push({itemId:'',qtd:0,n:0,m:'b'});rowsDraw()}
+function rowSel(i,val){const r=ed.rows[i];r.itemId=val;r.m='b';r.qtd=r.n||0;rowsDraw();prev()}
+function rowQtd(i,val){const r=ed.rows[i],it=S.itens.find(x=>x.id===r.itemId);r.n=+val||0;r.qtd=r.n*fatorMed(it,r.m||'b');prev()}
+function rowMed(i,m){const r=ed.rows[i],it=S.itens.find(x=>x.id===r.itemId);r.m=m;r.qtd=(r.n||0)*fatorMed(it,m);rowsDraw();prev()}
+function rowEq(i){const r=ed.rows[i];if((r.m||'b')!=='b')rowsDraw()}
 function rowDel(i){ed.rows.splice(i,1);rowsDraw();prev()}
-function tmpRec(){return{minutos:+v('r_min')||0,margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)}}
+function tmpRec(){return{minutos:+v('r_min')||0,forno:+v('r_forno')||0,margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)}}
 function prev(){
   const c=custo(tmpRec()),rend=+v('r_rend')||1;
-  $('#prev').innerHTML=`<div class="row"><span>Ingredientes</span><b>${R(c.ing)}</b></div>
-  <div class="row"><span>Perdas</span><b>${R(c.perda)}</b></div>
+  $('#prev').innerHTML=`<div class="row"><span>Ingredientes</span><b>${R(c.ins)}</b></div>
+  <div class="row"><span>Embalagens</span><b>${R(c.emb)}</b></div>
+  <div class="row"><span>Perdas e desperdício</span><b>${R(c.perda)}</b></div>
+  <div class="row"><span>Gás e energia (forno)</span><b>${R(c.gas)}</b></div>
   <div class="row"><span>Seu trabalho</span><b>${R(c.mao)}</b></div>
-  <div class="row"><span>Gastos fixos (gás, luz...)</span><b>${R(c.fixo)}</b></div>
+  <div class="row"><span>Gastos fixos (aluguel, internet...)</span><b>${R(c.fixo)}</b></div>
   <div class="row"><span>Custo total</span><b>${R(c.total)}</b></div><hr>
   <div class="muted">Preço sugerido (lucro de ${N(c.margem)}%)</div><div class="gd">${R(c.preco)}</div>
   <div class="muted">${R(c.preco/rend)} por fatia · você ganha ${R(c.lucro)} limpo</div>`;
 }
 function salvarRec(){
   const nome=v('r_nome').trim();if(!nome)return alert('Dê um nome para a receita.');
-  const o={nome,rendimento:+v('r_rend')||1,minutos:+v('r_min')||0,margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)};
+  const o={nome,rendimento:+v('r_rend')||1,minutos:+v('r_min')||0,forno:+v('r_forno')||0,margem:v('r_margem'),ingredientes:ed.rows.filter(x=>x.itemId&&x.qtd>0)};
   if(ed.id)Object.assign(S.receitas.find(x=>x.id===ed.id),o);else S.receitas.push({id:uid(),...o});
   salvar();fechar();render();
 }
@@ -665,11 +694,13 @@ function apagarRec(id){if(!confirm('Apagar esta receita?'))return;S.receitas=S.r
 
 /* --- Encomenda --- */
 function fEnc(id,dataPre){
-  const e=id?S.encomendas.find(x=>x.id===id):{cliente:'',tel:'',receitaId:'',descricao:'',data:dataPre||hoje(),hora:'',valor:'',sinal:0,obs:''};
+  const e=id?S.encomendas.find(x=>x.id===id):{cliente:'',tel:'',receitaId:'',descricao:'',data:dataPre||hoje(),hora:'',valor:'',sinal:0,obs:'',qtd:1};
+  ultAuto=null;
   modal(`<h3>${id?'Editar':'Nova'} encomenda</h3>
   ${campo('e_cli','Nome da cliente','text',e.cliente)}
   ${campo('e_tel','WhatsApp (com DDD)','tel',e.tel)}
   ${sel('e_rec','Produto',[['','Outro / personalizado'],...S.receitas.map(r=>[r.id,r.nome])],e.receitaId,'onchange="escolheProd()"')}
+  ${campo('e_qtd','Quantidade (quantos bolos/receitas iguais)','number',e.qtd||1,'oninput="escolheProd()"')}
   ${campo('e_desc','Detalhes (sabor, tema, escrita no bolo...)','text',e.descricao)}
   ${campo('e_data','Data da entrega','date',e.data)}
   ${campo('e_hora','Hora','time',e.hora)}
@@ -679,12 +710,15 @@ function fEnc(id,dataPre){
   <div class="btns"><button class="p" onclick="salvarEnc('${id||''}')">Salvar</button><button onclick="fechar()">Cancelar</button>
   ${id?`<button class="del" onclick="cancelarEnc('${id}')">Cancelar pedido</button>`:''}</div>`);
 }
+let ultAuto=null;
 function escolheProd(){
-  const r=S.receitas.find(x=>x.id===v('e_rec'));
-  if(r&&!+v('e_valor'))$('#e_valor').value=custo(r).preco.toFixed(2);
+  const r=S.receitas.find(x=>x.id===v('e_rec'));if(!r)return;
+  const atual=v('e_valor'),novo=(custo(r).preco*(Math.max(1,+v('e_qtd')||1))).toFixed(2);
+  // só preenche sozinho se estiver vazio ou ainda for o valor sugerido anterior
+  if(!+atual||atual===ultAuto){$('#e_valor').value=novo;ultAuto=novo}
 }
 function salvarEnc(id){
-  const o={cliente:v('e_cli').trim(),tel:v('e_tel').trim(),receitaId:v('e_rec'),descricao:v('e_desc').trim(),data:v('e_data'),hora:v('e_hora'),valor:+v('e_valor')||0,sinal:+v('e_sinal')||0,obs:v('e_obs').trim()};
+  const o={cliente:v('e_cli').trim(),tel:v('e_tel').trim(),receitaId:v('e_rec'),descricao:v('e_desc').trim(),data:v('e_data'),hora:v('e_hora'),valor:+v('e_valor')||0,sinal:+v('e_sinal')||0,obs:v('e_obs').trim(),qtd:Math.max(1,Math.round(+v('e_qtd')||1))};
   if(!o.cliente||!o.data)return alert('Preencha o nome da cliente e a data.');
   const mesmoDia=ativas().filter(x=>x.data===o.data&&x.id!==id);
   if(mesmoDia.length>=S.config.limiteDia){
@@ -700,7 +734,7 @@ function entregar(id){
   let msg='Marcar como entregue?';
   if(r&&!e.baixa)msg+='\n\nO estoque será reduzido com os ingredientes de "'+r.nome+'".';
   if(!confirm(msg))return;
-  if(r&&!e.baixa){r.ingredientes.forEach(i=>{const it=S.itens.find(x=>x.id===i.itemId);if(it)it.estoque=Math.max(0,it.estoque-i.qtd)});e.baixa=true}
+  if(r&&!e.baixa){r.ingredientes.forEach(i=>{const it=S.itens.find(x=>x.id===i.itemId);if(it)it.estoque=Math.max(0,it.estoque-i.qtd*(it.fc||1)*(e.qtd||1))});e.baixa=true}
   e.status='entregue';salvar();render();
 }
 
@@ -963,6 +997,7 @@ async function iniciar(){
   // se o navegador apagou os dados principais, recupera da cópia interna
   try{if(localStorage.getItem(KEY)===null){const d=await idbGet();if(d){const o=JSON.parse(d);S={...structuredClone(padrao),...o,config:{...padrao.config,...o.config}};try{localStorage.setItem(KEY,d)}catch(e){}recuperado=true}}}catch(e){}
   if(!S.seedV){if(!S.itens.length)basicos();S.seedV=1;salvar()}
+  if(!S.extraV){completaExtras();S.extraV=1;salvar()}
   pronto=true;idbSet(JSON.stringify(S));
   render();notificar(false);
   if(recuperado)alert('Seus dados foram recuperados da cópia interna do aplicativo.');
