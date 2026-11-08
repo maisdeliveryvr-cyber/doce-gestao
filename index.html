@@ -163,6 +163,7 @@ const IC={
   msg:'<path d="M4 5h16v11H9l-5 4V5z"/><path d="M8 9.5h8M8 12.5h5"/>',
   clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
   lock:'<rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  doc:'<path d="M7 3h7l5 5v13H7V3z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
   list:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" stroke-width="2.6"/>'
 };
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${IC[n]||''}</svg>`;
@@ -200,7 +201,7 @@ const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces
 
 /* ===== Dados ===== */
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
-const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],seedV:0,ultBackup:''};
+const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,orcValidade:7,orcContato:'',orcTermos:'',pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],orcSeq:0,seedV:0,ultBackup:''};
 let S=carregar();
 function carregar(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
@@ -286,7 +287,7 @@ function cardEnc(e){
     ${e.obs?`<div class="muted">${esc(e.obs)}</div>`:''}
     ${atrasada?`<div class="baixo" style="margin-top:6px">${ic('warn',16)} Data já passou — marque como entregue ou edite.</div>`:''}
     <div class="btns">
-      ${e.status==='pendente'?`<button class="ok" onclick="entregar('${e.id}')">${ic('check',18)} Entregue</button><button onclick="fPix('${e.id}')">${ic('pix',18)} Pix</button><button onclick="ics('${e.id}')">${ic('bell',18)} Lembrete</button>`:`<span class="tag">${e.status}</span>`}
+      ${e.status==='pendente'?`<button class="ok" onclick="entregar('${e.id}')">${ic('check',18)} Entregue</button><button onclick="fPix('${e.id}')">${ic('pix',18)} Pix</button><button onclick="fOrc('${e.id}')">${ic('doc',18)} Orçamento</button><button onclick="ics('${e.id}')">${ic('bell',18)} Lembrete</button>`:`<span class="tag">${e.status}</span>`}
       <button onclick="fMsg('${e.id}')">${ic('chat',18)} Mensagem</button>
       <button onclick="fEnc('${e.id}')">${ic('edit',18)} Editar</button>
     </div></div>`;
@@ -683,6 +684,13 @@ function vAjustes(){
   ${campo('x_cidade','Cidade (até 15 letras)','text',c.pixCidade)}
   ${campo('x_pct','Sinal para reservar a data (%)','number',c.sinalPct)}
   <button class="p big" onclick="salvarPix()">Salvar Pix</button></div>
+  <div class="card"><b>${ic('doc',20)} Orçamento em PDF</b>
+  <div class="muted">Estes dados saem no PDF que você manda para a cliente.</div>
+  ${campo('o_contato','Seus contatos (WhatsApp, Instagram, endereço...)','text',c.orcContato||'')}
+  ${campo('o_validade','Validade do orçamento (dias)','number',c.orcValidade||7)}
+  <label>Condições e política de cancelamento</label><textarea id="o_termos">${esc(c.orcTermos||TERMOS_PADRAO)}</textarea>
+  <div class="muted">Ajuste ao que você pratica (ex.: devolução do sinal conforme o prazo de aviso). Este texto é um modelo e não é aconselhamento jurídico.</div>
+  <button class="p big" onclick="salvarOrc()">Salvar orçamento</button></div>
   <div class="card"><b>${ic('chat',20)} Mensagens prontas de WhatsApp</b>
   <div class="muted">Use {cliente} {produto} {data} {horaTxt} {valor} {sinal} {saldo} {sinalDevido} {sinalPct} {pix} para preencher sozinho.</div>
   ${MSGS.map(([k,t,d])=>`<label>${t}</label><textarea id="m_${k}">${esc(msgTxt(k))}</textarea>`).join('')}
@@ -1068,10 +1076,11 @@ function waLink(tel,txt){
   return'https://wa.me/'+d+'?text='+encodeURIComponent(txt);
 }
 let msgSt=null;
-function fMsg(id){
+function fMsg(id,tpl){
   const e=S.encomendas.find(x=>x.id===id);msgSt={id};
   let ini='orcamento';
-  if(e.status==='entregue')ini='agradecimento';
+  if(tpl)ini=tpl;
+  else if(e.status==='entregue')ini='agradecimento';
   else if(e.status==='pendente')ini=e.sinal<=0?'sinal':(e.data===addDias(hoje(),1)?'vespera':'confirmacao');
   modal(`<h3>${ic('chat',22)} Mensagem para ${esc(e.cliente)}</h3>
   ${sel('m_tpl','Modelo',MSGS.map(m=>[m[0],m[1]]),ini,'onchange="msgTpl()"')}
@@ -1087,6 +1096,152 @@ function salvarMsgs(){
   S.config={...S.config,msgs:o};salvar();alert('Mensagens salvas!');render();
 }
 function restMsgs(){if(!confirm('Voltar todas as mensagens ao texto padrão?'))return;S.config={...S.config,msgs:{}};salvar();render()}
+
+/* ===== Orçamento em PDF (gerador próprio, funciona offline) ===== */
+const TERMOS_PADRAO='O sinal garante a reserva da data. O saldo deve ser pago até a entrega. Cancelamentos e remarcações seguem a política combinada com a confeiteira. Informe alergias e restrições alimentares ao confirmar o pedido.';
+const lat1=s=>String(s==null?'':s).replace(/[–—]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/•/g,'\x95').replace(/ /g,' ').replace(/[^\x20-\x7E\xA1-\xFF\x95]/g,'');
+const pdfEsc=s=>s.replace(/[\\()]/g,'\\$&');
+let _cv=null;
+const larg=(s,sz,b)=>{try{_cv=_cv||document.createElement('canvas').getContext('2d');_cv.font=`${b?'bold ':''}${sz}px Helvetica, Arial, sans-serif`;return _cv.measureText(s).width}catch(e){return s.length*sz*0.5}};
+function quebra(s,max,sz,b){
+  const out=[];
+  String(s).split('\n').forEach(par=>{
+    let l='';
+    par.split(/\s+/).filter(Boolean).forEach(w=>{const t=l?l+' '+w:w;if(!l||larg(lat1(t),sz,b)<=max)l=t;else{out.push(l);l=w}});
+    out.push(l);
+  });
+  return out;
+}
+async function logoJPEG(){
+  try{
+    const img=new Image();img.src='logo.png';await img.decode();
+    const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;
+    const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0);
+    const bin=atob(c.toDataURL('image/jpeg',.92).split(',')[1]),b=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);
+    return{w:c.width,h:c.height,bytes:b};
+  }catch(e){return null}
+}
+function montaPDF(cs,logo){
+  const parts=[],off=[];let len=0;
+  const bytes=s=>Uint8Array.from(s,ch=>ch.charCodeAt(0)&255);
+  const push=x=>{const b=typeof x==='string'?bytes(x):x;parts.push(b);len+=b.length};
+  const obj=(n,body)=>{off[n]=len;push(`${n} 0 obj\n${body}\nendobj\n`)};
+  push('%PDF-1.4\n');
+  obj(1,'<</Type/Catalog/Pages 2 0 R>>');
+  obj(2,'<</Type/Pages/Kids[3 0 R]/Count 1>>');
+  obj(3,`<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 5 0 R/F2 6 0 R/F3 7 0 R>>${logo?'/XObject<</Im1 8 0 R>>':''}>>/Contents 4 0 R>>`);
+  obj(4,`<</Length ${cs.length}>>\nstream\n${cs}endstream`);
+  obj(5,'<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>');
+  obj(6,'<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>');
+  obj(7,'<</Type/Font/Subtype/Type1/BaseFont/Courier/Encoding/WinAnsiEncoding>>');
+  let n=8;
+  if(logo){off[8]=len;push(`8 0 obj\n<</Type/XObject/Subtype/Image/Width ${logo.w}/Height ${logo.h}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ${logo.bytes.length}>>\nstream\n`);push(logo.bytes);push('\nendstream\nendobj\n');n=9}
+  const xref=len;
+  push(`xref\n0 ${n}\n0000000000 65535 f \n`+off.slice(1,n).map(o=>String(o).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<</Size ${n}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:'application/pdf'});
+}
+async function gerarPDF(e,op){
+  const c=S.config,r=S.receitas.find(x=>x.id===e.receitaId),prod=r?r.nome:(e.descricao||'Encomenda'),qtd=e.qtd||1;
+  if(!e.orc){S.orcSeq=(S.orcSeq||0)+1;e.orc=S.orcSeq;salvar()}
+  const logo=await logoJPEG();
+  const ROSA=[.89,.28,.37],ROSACL=[1,.9,.92],TXT=[.23,.16,.18],MUDO=[.54,.45,.48],BR=[1,1,1];
+  let cs='';
+  const rect=(x,y,w,h,col)=>{cs+=`${col.join(' ')} rg ${x.toFixed(2)} ${y.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f\n`};
+  const T=(x,top,s,sz=10,f='F1',col=TXT)=>{cs+=`BT /${f} ${sz} Tf ${col.join(' ')} rg ${x.toFixed(2)} ${(842-top).toFixed(2)} Td (${pdfEsc(lat1(s))}) Tj ET\n`};
+  const TR=(xr,top,s,sz,f,col)=>T(xr-larg(lat1(s),sz,f==='F2'),top,s,sz,f,col);
+  const L=(y,col)=>rect(40,842-y,515,0.8,col||[.93,.85,.87]);
+  const pct=c.sinalPct||50,total=+e.valor||0,sinalTot=+(total*pct/100).toFixed(2),saldo=Math.max(0,total-sinalTot),pago=+e.sinal||0;
+  const emissao=hoje(),ate=addDias(emissao,op.validade),brd=iso=>iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4);
+  // cabeçalho
+  rect(0,742,595,100,ROSA);rect(0,742,595,4,[.7,.07,.23]);
+  if(logo){cs+=`q 60 0 0 60 40 756 cm /Im1 Do Q\n`}
+  T(logo?112:40,52,'Mamãe de Açúcar',24,'F2',BR);
+  T(logo?112:40,70,'ORÇAMENTO DE ENCOMENDA',10,'F1',BR);
+  TR(555,48,'Nº '+String(e.orc).padStart(4,'0'),17,'F2',BR);
+  TR(555,66,'Emitido em '+brd(emissao),9,'F1',BR);
+  // cliente e entrega
+  T(40,138,'CLIENTE',8,'F2',MUDO);T(40,156,e.cliente,13,'F2');
+  if(e.tel)T(40,172,'WhatsApp: '+e.tel,10,'F1',TXT);
+  T(330,138,'ENTREGA',8,'F2',MUDO);
+  const dt=new Date(e.data+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  quebra(dt.charAt(0).toUpperCase()+dt.slice(1),225,11,true).forEach((l,i)=>T(330,156+i*14,l,11,'F2'));
+  T(330,184,e.hora?'às '+e.hora:'horário a combinar',10,'F1',TXT);
+  L(198);
+  // tabela
+  rect(40,842-226,515,24,ROSACL);
+  T(48,218,'DESCRIÇÃO',8,'F2',[.7,.07,.23]);T(372,218,'QTD',8,'F2',[.7,.07,.23]);TR(482,218,'UNITÁRIO',8,'F2',[.7,.07,.23]);TR(547,218,'TOTAL',8,'F2',[.7,.07,.23]);
+  let cy=246;
+  quebra(prod,310,11,true).forEach(l=>{T(48,cy,l,11,'F2');cy+=14});
+  if(e.descricao&&r)quebra(e.descricao,310,9,false).forEach(l=>{T(48,cy,l,9,'F1',MUDO);cy+=12});
+  T(372,246,String(qtd),11,'F1');TR(482,246,R(total/qtd),10,'F1');TR(547,246,R(total),11,'F2');
+  cy=Math.max(cy,262)+8;L(cy);cy+=24;
+  // totais
+  const linha=(rot,val,neg,cor)=>{T(330,cy,rot,neg?12:10,neg?'F2':'F1',cor||TXT);TR(547,cy,val,neg?12:10,neg?'F2':'F1',cor||TXT);cy+=neg?24:18};
+  linha('Total do pedido',R(total),true,[.7,.07,.23]);
+  linha(`Sinal para reservar a data (${N(pct)}%)`,R(sinalTot));
+  if(pago>0)linha('Já pago',R(pago));
+  linha('Saldo na entrega',R(Math.max(0,total-Math.max(sinalTot,pago))));
+  // Pix
+  let ycol=cy;
+  if(op.pix&&c.pixChave){
+    const code=pixCode(sinalTot),{size,M}=QR.make(code),q=104,ms=q/size,x0=48,yt=Math.max(cy,288)+8;
+    T(40,yt,'PAGAMENTO DO SINAL VIA PIX',8,'F2',MUDO);
+    const qt=yt+10;
+    rect(40,842-(qt+q+16),q+16,q+16,[.93,.85,.87]);rect(41,842-(qt+q+15),q+14,q+14,BR);
+    cs+='0 0 0 rg\n';
+    for(let y=0;y<size;y++){let x=0;while(x<size){if(M[y][x]){let s=x;while(x<size&&M[y][x])x++;cs+=`${(x0+s*ms).toFixed(2)} ${(842-(qt+8+(y+1)*ms)).toFixed(2)} ${((x-s)*ms).toFixed(2)} ${ms.toFixed(2)} re\n`}else x++}}
+    cs+='f\n';
+    const tx=40+q+32;let ty=qt+14;
+    T(tx,ty,'Valor do sinal: '+R(sinalTot),11,'F2');ty+=16;
+    T(tx,ty,'Favorecido: '+(c.pixNome||''),9,'F1');ty+=13;
+    T(tx,ty,'Chave Pix: '+chavePix(c),9,'F1');ty+=18;
+    T(tx,ty,'Escaneie o QR code ou use o Pix copia e cola:',8,'F1',MUDO);ty+=11;
+    for(let i=0;i<code.length;i+=58){T(tx,ty,code.slice(i,i+58),6.5,'F3');ty+=8.5}
+    ycol=qt+q+16;
+  }
+  // condições
+  cy=Math.max(ycol,cy)+26;L(cy-14);
+  T(40,cy,'CONDIÇÕES',8,'F2',MUDO);cy+=15;
+  T(40,cy,`Orçamento válido até ${brd(ate)}.`,9.5,'F2');cy+=14;
+  quebra(c.orcTermos||TERMOS_PADRAO,515,9,false).forEach(l=>{T(40,cy,l,9,'F1');cy+=12});
+  if(e.obs){cy+=6;T(40,cy,'OBSERVAÇÕES',8,'F2',MUDO);cy+=14;quebra(e.obs,515,9,false).forEach(l=>{T(40,cy,l,9,'F1');cy+=12})}
+  // rodapé
+  rect(40,842-792,515,0.8,[.93,.85,.87]);
+  if(c.orcContato)quebra(c.orcContato,515,9,false).slice(0,2).forEach((l,i)=>T(40,806+i*11,l,9,'F1',TXT));
+  TR(555,826,'Mamãe de Açúcar · gerado pelo aplicativo de gestão',7,'F1',MUDO);
+  return montaPDF(cs,logo);
+}
+function fOrc(id){
+  const e=S.encomendas.find(x=>x.id===id),c=S.config;pdfId=id;
+  if(!e.valor)return alert('Preencha o valor combinado da encomenda para gerar o orçamento.');
+  modal(`<h3>${ic('doc',22)} Orçamento em PDF</h3>
+  <div class="muted">${esc(e.cliente)} · ${(e.qtd||1)>1?e.qtd+'× ':''}${esc((S.receitas.find(r=>r.id===e.receitaId)||{}).nome||e.descricao||'Encomenda')} · <b>${R(e.valor)}</b></div>
+  <div class="muted">Sinal para reservar (${N(c.sinalPct||50)}%): <b>${R(e.valor*(c.sinalPct||50)/100)}</b> · entrega ${dataBR(e.data)}${e.hora?' às '+esc(e.hora):''}</div>
+  ${campo('o_val','Validade do orçamento (dias)','number',c.orcValidade||7)}
+  ${c.pixChave?sel('o_pix','Incluir QR code do Pix para o sinal',[['1','Sim'],['0','Não']],'1'):'<div class="dica">'+ic('pix',20)+'<div>Cadastre sua chave Pix em <b>Ajustes</b> para o orçamento levar o QR code do sinal.</div></div><input type="hidden" id="o_pix" value="0">'}
+  <div class="btns"><button class="p" onclick="orcPDF('share')">${ic('share',18)} Compartilhar PDF</button><button onclick="orcPDF('baixar')">${ic('down',18)} Baixar PDF</button></div>
+  <div class="btns"><button class="ok" onclick="fechar();fMsg(pdfId,'orcamento')">${ic('chat',18)} Mensagem de orçamento</button><button onclick="fechar()">Fechar</button></div>
+  <p class="muted">Seus contatos e as condições saem do que você cadastrou em Ajustes.</p>`);
+}
+let pdfId=null;
+async function orcPDF(acao){
+  const e=S.encomendas.find(x=>x.id===pdfId);if(!e)return;
+  const op={validade:Math.max(1,Math.round(+v('o_val')||7)),pix:v('o_pix')==='1'};
+  let blob;try{blob=await gerarPDF(e,op)}catch(err){return alert('Não consegui gerar o PDF: '+err.message)}
+  const nome='orcamento-'+String(e.orc).padStart(4,'0')+'-'+semAcento(e.cliente).replace(/\W+/g,'-').toLowerCase()+'.pdf';
+  if(acao==='share'){
+    try{const f=new File([blob],nome,{type:'application/pdf'});
+      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:'Orçamento - Mamãe de Açúcar'});return}
+    }catch(er){if(er&&er.name==='AbortError')return}
+  }
+  baixar(nome,blob,'application/pdf');
+}
+function salvarOrc(){
+  const t=v('o_termos').trim();
+  S.config={...S.config,orcContato:v('o_contato').trim(),orcValidade:Math.max(1,Math.round(+v('o_validade')||7)),orcTermos:t===TERMOS_PADRAO?'':t};
+  salvar();alert('Orçamento salvo!');render();
+}
 
 /* ===== Cópia de segurança e exemplo ===== */
 const precisaBackup=()=>(S.receitas.length||S.encomendas.length)&&(!S.ultBackup||S.ultBackup<addDias(hoje(),-7));
