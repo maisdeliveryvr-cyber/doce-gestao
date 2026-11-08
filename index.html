@@ -207,7 +207,7 @@ const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces
 
 /* ===== Dados ===== */
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
-const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,orcValidade:7,orcContato:'',orcTermos:'',meiOn:false,meiAbertura:'',meiDAS:82.05,proLabore:0,cliMeta:5,cliBeneficio:'',cliRecompra:60,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],orcSeq:0,meiPagos:{},clientes:[],cliV:0,seedV:0,ultBackup:''};
+const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,orcValidade:7,orcContato:'',orcTermos:'',meiOn:false,meiAbertura:'',meiDAS:82.05,proLabore:0,cliMeta:5,cliBeneficio:'',cliRecompra:60,validAviso:7,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],orcSeq:0,meiPagos:{},clientes:[],cliV:0,lotes:[],perdas:[],seedV:0,ultBackup:''};
 let S=carregar();
 function carregar(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
@@ -318,6 +318,7 @@ function vInicio(){
     <div class="stat"><span class="ico">${ic('coin')}</span><div class="muted">A receber</div><div class="num">${R(receber)}</div></div>
   </div>
   ${cardAltas(30,3)}
+  ${cardValidade()}
   ${cardMEI()}
   ${cardAniv(7)}
   ${cardFestas(45,2)}
@@ -483,15 +484,16 @@ function listaEst(){
     const l=S.itens.filter(i=>i.tipo===tipo&&(!q||norm(i.nome).includes(q))).sort((a,b)=>a.nome.localeCompare(b.nome));
     return`<h3>${ic(icone,20)} ${titulo}</h3>${l.map(i=>`<div class="card ${isBaixo(i)?'alerta':''}">
       <div class="row"><b>${esc(i.nome)}</b><span class="${isBaixo(i)?'baixo':''}">${N(i.estoque)} ${i.unidade}</span></div>
-      <div class="muted">${R(i.preco)} por pacote de ${N(i.qtdPacote)} ${i.unidade} · ${R(baseItem(i))}/${lbl(i)} ${i.ref?'<span class="tag est">preço estimado</span>':''} ${varTag(i)}</div>
+      <div class="muted">${R(i.preco)} por pacote de ${N(i.qtdPacote)} ${i.unidade} · ${R(baseItem(i))}/${lbl(i)} ${i.ref?'<span class="tag est">preço estimado</span>':''} ${varTag(i)} ${validTag(i)}</div>
       ${i.minimo>0?`<div class="muted">avisar abaixo de ${N(i.minimo)}</div>`:''}
-      <div class="btns"><button class="p" onclick="fCompra('${i.id}')">${ic('plus',18)} Comprei</button><button onclick="fCot('${i.id}')">${ic('chart',18)} Comparar</button><button onclick="fHist('${i.id}')">${ic('clock',18)} Histórico</button><button onclick="fItem('${i.id}')">${ic('edit',18)} Editar</button></div></div>`).join('')||'<div class="vazio">Nada encontrado.</div>'}`;
+      <div class="btns"><button class="p" onclick="fCompra('${i.id}')">${ic('plus',18)} Comprei</button><button onclick="fCot('${i.id}')">${ic('chart',18)} Comparar</button><button onclick="fHist('${i.id}')">${ic('clock',18)} Histórico</button><button onclick="fLotes('${i.id}')">${ic('list',18)} Lotes</button><button onclick="fItem('${i.id}')">${ic('edit',18)} Editar</button></div></div>`).join('')||'<div class="vazio">Nada encontrado.</div>'}`;
   };
   return bloco('insumo','Ingredientes','cake')+bloco('embalagem','Embalagens','box');
 }
 function vEstoque(){
   return`<button class="p big" onclick="fItem()">${ic('plus',20)} Novo item</button>
   <button class="big" onclick="go('compras')">${ic('cart',20)} Lista de compras</button>
+  <button class="big" onclick="fInv()">${ic('check',20)} Inventário rápido</button>
   <div class="dica">${ic('spark',20)}<div>Os preços marcados como <b>estimado</b> são de referência. Toque em <b>Editar</b> ou <b>Comprei</b> para colocar o preço real que você paga.</div></div>
   <div class="busca">${ic('search',20)}<input id="busca" placeholder="Buscar ingrediente ou embalagem..." value="${esc(bq)}" oninput="bq=this.value;$('#lista').innerHTML=listaEst()"></div>
   <div id="lista">${listaEst()}</div>
@@ -686,6 +688,7 @@ function vAjustes(){
   ${f('c_taxa','Taxa da maquininha / app (%)',c.taxa,'0 se receber só em Pix ou dinheiro.')}
   ${f('c_lim','Capacidade de produção por dia (pontos)',c.limiteDia,'Cada receita vale uma quantidade de pontos (ex.: bolo grande 2, docinhos 1). O app avisa quando o dia passar disso.')}
   ${f('c_ant','Antecedência mínima para encomendas (dias)',c.antecedencia||0,'0 = aceita para qualquer dia. O app avisa se marcarem com menos tempo.')}
+  ${f('c_vald','Avisar validade com quantos dias de antecedência',c.validAviso||7,'Vale para os lotes com validade cadastrada no estoque.')}
   <button class="p big" onclick="salvarConfig()">Salvar</button></div>
   <div class="card"><b>${ic('pix',20)} Pix e cobrança do sinal</b>
   <div class="muted">Cadastre sua chave uma vez. Em cada encomenda, o botão Pix gera o QR code e o “copia e cola” com o valor certo.</div>
@@ -716,7 +719,7 @@ function vAjustes(){
 }
 function salvarConfig(){
   const g=id=>+v(id)||0;
-  S.config={...S.config,valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),custoForno:g('c_forno'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(0.5,g('c_lim')),antecedencia:Math.max(0,Math.round(g('c_ant')))};
+  S.config={...S.config,valorHora:g('c_hora'),custosFixosMes:g('c_fixo'),custoForno:g('c_forno'),bolosMes:g('c_bolos'),perda:g('c_perda'),margem:g('c_margem'),taxa:Math.min(g('c_taxa'),50),limiteDia:Math.max(0.5,g('c_lim')),antecedencia:Math.max(0,Math.round(g('c_ant'))),validAviso:Math.max(1,Math.round(g('c_vald'))||7)};
   salvar();alert('Salvo!');render();
 }
 
@@ -748,7 +751,7 @@ function salvarItem(id){
   const o={nome:v('i_nome').trim(),tipo:v('i_tipo'),unidade:v('i_un'),preco:+v('i_preco')||0,qtdPacote:+v('i_pac')||0,estoque:+v('i_est')||0,minimo:+v('i_min')||0,fc:Math.max(1,+v('i_fc')||1),xic:Math.max(0,+v('i_xic')||0)};
   if(!o.nome||o.qtdPacote<=0)return alert('Preencha o nome e quanto vem no pacote.');
   if(id){const it=S.itens.find(x=>x.id===id),antes=snapPreco(it),mudou=o.preco!==it.preco||o.qtdPacote!==it.qtdPacote;
-    if(mudou)delete it.ref;Object.assign(it,o);if(mudou&&o.preco>0)logPreco(it,'ajuste manual',antes)}
+    if(mudou)delete it.ref;Object.assign(it,o);ajustaLotes(it);if(mudou&&o.preco>0)logPreco(it,'ajuste manual',antes)}
   else{const it={id:uid(),...o};S.itens.push(it);if(o.preco>0)logPreco(it,'cadastro')}
   salvar();fechar();render();
 }
@@ -758,6 +761,7 @@ function apagarItem(id){
   S.itens=S.itens.filter(x=>x.id!==id);
   S.cotacoes=S.cotacoes.filter(c=>c.itemId!==id);
   S.historico=S.historico.filter(h=>h.itemId!==id);
+  S.lotes=S.lotes.filter(l=>l.itemId!==id);
   S.receitas.forEach(r=>r.ingredientes=r.ingredientes.filter(i=>i.itemId!==id));
   salvar();fechar();render();
 }
@@ -766,6 +770,8 @@ function fCompra(id,n){
   modal(`<h3>Comprei: ${esc(i.nome)}</h3>
   ${campo('b_n','Quantos pacotes comprei','number',n||1)}
   ${campo('b_p','Preço de cada pacote (R$)','number',i.preco)}
+  ${campo('b_val','Validade deste lote (opcional)','date','')}
+  <div class="muted">Com a validade, o app avisa antes de vencer e baixa primeiro o lote que vence antes.</div>
   <div class="muted">O preço novo atualiza o cálculo das suas receitas.</div>
   <div class="btns"><button class="p" onclick="salvarCompra('${id}')">Salvar</button><button onclick="fechar()">Cancelar</button></div>`);
 }
@@ -773,7 +779,8 @@ function salvarCompra(id){
   const i=S.itens.find(x=>x.id===id),n=+v('b_n')||0,p=+v('b_p')||0;
   if(n<=0)return alert('Informe quantos pacotes.');
   const antes=snapPreco(i);
-  i.estoque+=n*i.qtdPacote;if(p>0){if(p!==i.preco)delete i.ref;i.preco=p;logPreco(i,'compra',antes)}
+  i.estoque+=n*i.qtdPacote;if(v('b_val'))S.lotes.push({id:uid(),itemId:i.id,qtd:n*i.qtdPacote,val:v('b_val'),entrada:hoje()});
+  if(p>0){if(p!==i.preco)delete i.ref;i.preco=p;logPreco(i,'compra',antes)}
   salvar();fechar();render();
 }
 
@@ -885,7 +892,7 @@ function entregar(id){
   let msg='Marcar como entregue?';
   if(r&&!e.baixa)msg+='\n\nO estoque será reduzido com os ingredientes de "'+r.nome+'".';
   if(!confirm(msg))return;
-  if(r&&!e.baixa){r.ingredientes.forEach(i=>{const it=S.itens.find(x=>x.id===i.itemId);if(it)it.estoque=Math.max(0,it.estoque-i.qtd*(it.fc||1)*(e.qtd||1))});e.baixa=true}
+  if(r&&!e.baixa){r.ingredientes.forEach(i=>{const it=S.itens.find(x=>x.id===i.itemId);if(it){const q=i.qtd*(it.fc||1)*(e.qtd||1);it.estoque=Math.max(0,it.estoque-q);consomeLotes(it.id,q);ajustaLotes(it)}});e.baixa=true}
   e.status='entregue';salvar();render();
 }
 
@@ -1336,6 +1343,7 @@ function relResumo(){
     <div class="row"><span class="muted">Sinais já recebidos (pedidos em aberto)</span><b>${R(sinais)}</b></div>
     <div class="row"><span class="muted">A receber na entrega</span><b>${R(aRec)}</b></div>
     ${atras>0?`<div class="row"><span class="baixo">Atrasado (data já passou)</span><b class="baixo">${R(atras)}</b></div>`:''}</div>
+  ${perdasCard(ini,fim,st.venda)}
   <div class="dica">${ic('spark',20)}<div>O lucro usa os custos de <b>hoje</b> das suas receitas (ingredientes, perdas, gás, seu trabalho e gastos fixos rateados) e a taxa da maquininha. ${st.semRec?`<b>${st.semRec} ${st.semRec>1?'pedidos entregues sem':'pedido entregue sem'} receita</b> ficam fora do lucro. `:''}O pró-labore já está dentro do preço: o que sobra mais o trabalho é a sua retirada.</div></div>`;
 }
 function salvarPro(){S.config={...S.config,proLabore:Math.max(0,+v('rl_pro')||0)};salvar();render()}
@@ -1532,6 +1540,103 @@ function apagarCli(){
   if(!confirm(`Apagar a ficha de ${c.nome}? Os pedidos continuam na agenda, mas sem a ficha (alergias, aniversário, fidelidade). Não dá para desfazer.`))return;
   S.clientes=S.clientes.filter(x=>x.id!==c.id);S.encomendas.forEach(e=>{if(e.clienteId===c.id)delete e.clienteId});
   salvar();fechar();render();
+}
+
+/* ===== Lotes, validade, perdas e inventário ===== */
+const MOTIVOS=[['vencido','Venceu'],['estragou','Estragou'],['derramou','Caiu ou derramou'],['erro','Erro na receita'],['outro','Outro'],['inventário','Diferença no inventário']];
+const lotesDe=id=>S.lotes.filter(l=>l.itemId===id&&l.qtd>1e-9).sort((a,b)=>a.val.localeCompare(b.val));
+const somaLotes=id=>lotesDe(id).reduce((s,l)=>s+l.qtd,0);
+function consomeLotes(id,q){ // primeiro a vencer, primeiro a sair (FEFO)
+  let r=q;lotesDe(id).forEach(l=>{if(r<=1e-9)return;const t=Math.min(l.qtd,r);l.qtd-=t;r-=t});
+  S.lotes=S.lotes.filter(l=>l.qtd>1e-9);
+}
+function ajustaLotes(it){const exc=somaLotes(it.id)-it.estoque;if(exc>1e-9)consomeLotes(it.id,exc)}
+function validTag(it){
+  const ls=lotesDe(it.id);if(!ls.length)return'';
+  const d=diasAte(ls[0].val),av=S.config.validAviso||7;
+  if(d<0)return`<span class="tag est">${ic('clock',14)} vencido ${diaMes(ls[0].val)}</span>`;
+  if(d<=av)return`<span class="tag est">${ic('clock',14)} ${d===0?'vence hoje':'vence em '+d+' d'}</span>`;
+  return`<span class="tag ok">${ic('clock',14)} validade ${diaMes(ls[0].val)}</span>`;
+}
+function alertasVal(){
+  const av=S.config.validAviso||7;
+  return S.lotes.filter(l=>l.qtd>1e-9&&diasAte(l.val)<=av).map(l=>({l,it:S.itens.find(x=>x.id===l.itemId),d:diasAte(l.val)})).filter(x=>x.it).sort((a,b)=>a.d-b.d);
+}
+function cardValidade(){
+  const l=alertasVal();if(!l.length)return'';
+  return`<div class="card ${l.some(x=>x.d<0)?'ruim':'alerta'}"><b>${ic('clock',18)} Validade</b>
+  ${l.slice(0,5).map(({l,it,d})=>`<div class="alt clic" onclick="fLotes('${it.id}')"><div class="row"><span>${esc(it.nome)} · ${N(l.qtd)} ${it.unidade}</span><span class="${d<0?'baixo':''}"><b>${d<0?'vencido há '+(-d)+' d':d===0?'vence hoje':'vence em '+d+' d'}</b></span></div></div>`).join('')}
+  ${l.length>5?`<div class="muted">e mais ${l.length-5}</div>`:''}<div class="muted" style="margin-top:6px">Use primeiro o que vence antes. Toque para ver os lotes.</div></div>`;
+}
+function fLotes(id){
+  const it=S.itens.find(x=>x.id===id),ls=lotesDe(id),em=somaLotes(id),disp=Math.max(0,it.estoque-em),av=S.config.validAviso||7;
+  modal(`<h3>${ic('list',22)} Lotes: ${esc(it.nome)}</h3>
+  <div class="muted">Estoque: <b>${N(it.estoque)} ${it.unidade}</b> · com validade informada: <b>${N(em)}</b> · sem validade: ${N(disp)}</div>
+  <div style="margin-top:8px">${ls.map(l=>{const d=diasAte(l.val);return`<div class="cot"><span class="${d<0?'baixo':d<=av?'est':''}">${ic('clock',16)}</span>
+    <div><b>${N(l.qtd)} ${it.unidade}</b><div class="muted">validade ${l.val.slice(8,10)}/${l.val.slice(5,7)}/${l.val.slice(0,4)} · ${d<0?'<span class="baixo">vencido há '+(-d)+' dias</span>':d===0?'vence hoje':'faltam '+d+' dias'}</div></div>
+    <button onclick="fPerda('${id}','${l.id}')">${ic('trash',16)} Perda</button><button title="Apagar só o registro do lote" onclick="apagarLote('${l.id}','${id}')">${ic('x',16)}</button></div>`}).join('')||'<div class="vazio">Nenhum lote com validade. Na compra (Comprei) você informa a validade.</div>'}</div>
+  <div class="muted" style="margin-top:6px">Ao entregar um pedido, o app baixa primeiro o lote que vence antes.</div>
+  ${disp>0?`<h3 style="margin-bottom:0">${ic('plus',18)} Informar validade do que já está no estoque</h3>
+  ${campo('l_qtd','Quantidade deste lote ('+it.unidade+')','number',Math.min(it.qtdPacote,disp))}
+  ${campo('l_val','Validade','date','')}
+  <button class="p" style="margin-top:8px" onclick="addLote('${id}')">Adicionar lote</button>`:''}
+  <div class="btns"><button onclick="fPerda('${id}')">${ic('warn',18)} Registrar perda</button><button onclick="fCompra('${id}')">${ic('plus',18)} Comprei</button><button onclick="fechar()">Fechar</button></div>`);
+}
+function addLote(id){
+  const it=S.itens.find(x=>x.id===id),disp=Math.max(0,it.estoque-somaLotes(id));let q=+v('l_qtd')||0;const val=v('l_val');
+  if(q<=0||!val)return alert('Informe a quantidade e a validade.');
+  if(q>disp+1e-9){q=disp;alert('Só há '+N(disp)+' '+it.unidade+' sem validade no estoque. A quantidade foi ajustada.')}
+  S.lotes.push({id:uid(),itemId:id,qtd:q,val,entrada:hoje()});salvar();render();fLotes(id);
+}
+function apagarLote(lid,id){if(!confirm('Apagar só o registro deste lote? O estoque não muda.'))return;S.lotes=S.lotes.filter(l=>l.id!==lid);salvar();render();fLotes(id)}
+function fPerda(id,lid){
+  const it=S.itens.find(x=>x.id===id),l=lid?S.lotes.find(x=>x.id===lid):null;perdaSt={id,lid:lid||null};
+  const venceu=l&&diasAte(l.val)<0;
+  modal(`<h3>${ic('warn',22)} Registrar perda: ${esc(it.nome)}</h3>
+  <div class="muted">Estoque atual: ${N(it.estoque)} ${it.unidade}</div>
+  ${campo('p_qtd','Quanto foi perdido ('+it.unidade+')','number',l?l.qtd:'')}
+  ${sel('p_mot','O que aconteceu',MOTIVOS.filter(m=>m[0]!=='inventário'),venceu?'vencido':'estragou')}
+  <div class="muted">A perda baixa o estoque e entra no relatório de desperdício (Relatórios, aba Resumo).</div>
+  <div class="btns"><button class="p" onclick="salvarPerda()">Salvar perda</button><button onclick="fechar()">Cancelar</button></div>`);
+}
+let perdaSt=null;
+function salvarPerda(){
+  const it=S.itens.find(x=>x.id===perdaSt.id);let q=+v('p_qtd')||0;
+  if(q<=0)return alert('Informe quanto foi perdido.');
+  if(q>it.estoque){q=it.estoque;if(q<=0)return alert('Não há estoque desse item.')}
+  it.estoque-=q;
+  if(perdaSt.lid){const l=S.lotes.find(x=>x.id===perdaSt.lid);if(l){l.qtd-=Math.min(l.qtd,q);S.lotes=S.lotes.filter(x=>x.qtd>1e-9)}}
+  else consomeLotes(it.id,q);
+  ajustaLotes(it);
+  S.perdas.push({id:uid(),itemId:it.id,nome:it.nome,qtd:q,motivo:v('p_mot'),data:hoje(),valor:it.qtdPacote>0?q/it.qtdPacote*it.preco:0});
+  salvar();fechar();render();
+}
+function perdasCard(ini,fim,venda){
+  const l=S.perdas.filter(p=>p.data>=ini&&p.data<=fim);
+  const tot=l.reduce((s,p)=>s+p.valor,0),por={};l.forEach(p=>por[p.motivo]=(por[p.motivo]||0)+p.valor);
+  const rot=k=>(MOTIVOS.find(m=>m[0]===k)||[k,k])[1];
+  return`<div class="card ${tot>0?'alerta':''}"><b>${ic('warn',18)} Perdas e desperdício</b>
+  ${l.length?`<div class="row" style="margin:6px 0"><span class="muted">Total perdido no período</span><b>${R(tot)}</b></div>
+  ${venda>0?`<div class="muted">${N(tot/venda*100)}% do que foi vendido. Você usa ${N(S.config.perda)}% de perda nos preços: se o desperdício real for maior, aumente em Ajustes.</div>`:''}
+  ${Object.entries(por).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row" style="padding:3px 0"><span>${rot(k)}</span><span>${R(v)}</span></div>`).join('')}`
+  :'<div class="muted">Nenhuma perda registrada neste período. Registre em Estoque, no botão Lotes, para saber quanto o desperdício custa.</div>'}</div>`;
+}
+function fInv(){
+  const l=[...S.itens].sort((a,b)=>a.nome.localeCompare(b.nome));
+  modal(`<h3>${ic('check',22)} Inventário rápido</h3>
+  <div class="muted">Conte o que você tem e digite só os itens que quiser conferir. Os campos vazios não mudam. Se faltar produto, a diferença entra como perda.</div>
+  ${l.map(i=>`<div class="lin" style="grid-template-columns:1fr 96px 26px"><span>${esc(i.nome)}<div class="muted">sistema: ${N(i.estoque)}</div></span><input type="number" step="any" inputmode="decimal" id="inv_${i.id}" placeholder="contei"><span>${i.unidade}</span></div>`).join('')}
+  <div class="btns"><button class="p" onclick="salvarInv()">Salvar contagem</button><button onclick="fechar()">Cancelar</button></div>`);
+}
+function salvarInv(){
+  let n=0;
+  S.itens.forEach(i=>{
+    const el=document.getElementById('inv_'+i.id);if(!el||el.value==='')return;
+    const q=Math.max(0,+el.value||0);if(Math.abs(q-i.estoque)<1e-9)return;
+    if(q<i.estoque)S.perdas.push({id:uid(),itemId:i.id,nome:i.nome,qtd:i.estoque-q,motivo:'inventário',data:hoje(),valor:i.qtdPacote>0?(i.estoque-q)/i.qtdPacote*i.preco:0});
+    i.estoque=q;ajustaLotes(i);n++;
+  });
+  salvar();fechar();render();alert(n?n+(n>1?' itens ajustados.':' item ajustado.'):'Nenhuma diferença encontrada.');
 }
 
 /* ===== Cópia de segurança e exemplo ===== */
