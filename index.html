@@ -113,7 +113,7 @@ input:focus,select:focus{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(227,
 .dica .i{color:var(--rosa);margin-top:2px}
 .qr{background:#fff;padding:10px;border-radius:18px;max-width:260px;margin:12px auto;box-shadow:0 1px 0 #fff inset,0 14px 28px -14px rgba(179,18,58,.5);border:1px solid var(--borda)}
 .qr svg{display:block;width:100%;height:auto}
-textarea{min-height:90px;resize:vertical;font-size:13px}
+textarea{min-height:90px;resize:vertical;font-size:16px}
 .prog{height:14px;border-radius:9px;background:#f3dfe3;position:relative;overflow:hidden;box-shadow:0 2px 4px rgba(179,18,58,.12) inset}
 .prog i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#f0617a,#b3123a)}
 .prog i.ok{background:linear-gradient(90deg,#34b96f,#1f9d55)}
@@ -208,10 +208,12 @@ const LOJAS=['Atacadão','Assaí','Carrefour','Mercado do bairro','Casa de doces
 /* ===== Dados ===== */
 const KEY='doce_gestao_v1'; // mantém a chave para não perder dados já salvos
 const padrao={config:{valorHora:20,custosFixosMes:300,bolosMes:20,margem:100,perda:5,taxa:0,limiteDia:1,antecedencia:0,custoForno:2,orcValidade:7,orcContato:'',orcTermos:'',meiOn:false,meiAbertura:'',meiDAS:82.05,proLabore:0,cliMeta:5,cliBeneficio:'',cliRecompra:60,validAviso:7,pixTipo:'cpf',pixChave:'',pixNome:'',pixCidade:'',sinalPct:50},itens:[],receitas:[],encomendas:[],cotacoes:[],historico:[],bloqueios:[],orcSeq:0,meiPagos:{},clientes:[],cliV:0,lotes:[],perdas:[],seedV:0,ultBackup:''};
+const clone=o=>JSON.parse(JSON.stringify(o)); // compatível com iPhones e Androids mais antigos
+const VERSAO='1.0 · 08/11/2026';
 let S=carregar();
 function carregar(){
-  try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
-  return structuredClone(padrao);
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...clone(padrao),...s,config:{...padrao.config,...s.config}}}catch(e){}
+  return clone(padrao);
 }
 let pronto=false,persistido=null,recuperado=false;
 function salvar(){
@@ -275,7 +277,17 @@ function custo(r){
 /* ===== Telas ===== */
 const ABAS=[['inicio','home','Início'],['agenda','cal','Agenda'],['receitas','coin','Preços'],['estoque','box','Estoque'],['mercado','chart','Mercado'],['ajustes','sliders','Ajustes']];
 let aba='inicio',mes=new Date(),ed=null,bq='',bm='';
-function go(a){aba=a;render();scrollTo(0,0)}
+function go(a){
+  if(a!==aba){try{history.pushState({a},'')}catch(e){}}
+  aba=a;render();scrollTo(0,0);
+}
+// botão "voltar" do celular: fecha a janela aberta ou volta à tela anterior, em vez de sair do app
+try{history.replaceState({root:1},'');history.pushState({a:'inicio'},'')}catch(e){}
+window.addEventListener('popstate',ev=>{
+  const m=$('#modal');
+  if(m&&m.classList.contains('on')){fechar();try{history.pushState({a:aba},'')}catch(e){}return}
+  if(ev.state&&ev.state.a&&ev.state.a!==aba){aba=ev.state.a;render();scrollTo(0,0)}
+});
 function render(){
   const ativa=aba==='compras'?'estoque':(aba==='relatorios'||aba==='clientes')?'inicio':aba;
   $('#nav').innerHTML=ABAS.map(([k,i,t])=>`<button class="${k===ativa?'on':''}" onclick="go('${k}')">${ic(i)}${t}</button>`).join('');
@@ -294,7 +306,7 @@ function cardEnc(e){
     ${e.obs?`<div class="muted">${esc(e.obs)}</div>`:''}
     ${atrasada?`<div class="baixo" style="margin-top:6px">${ic('warn',16)} Data já passou — marque como entregue ou edite.</div>`:''}
     <div class="btns">
-      ${e.status==='pendente'?`<button class="ok" onclick="entregar('${e.id}')">${ic('check',18)} Entregue</button><button onclick="fPix('${e.id}')">${ic('pix',18)} Pix</button><button onclick="fOrc('${e.id}')">${ic('doc',18)} Orçamento</button><button onclick="ics('${e.id}')">${ic('bell',18)} Lembrete</button>`:`<span class="tag">${e.status}</span>`}
+      ${e.status==='pendente'?`<button class="ok" onclick="entregar('${e.id}')">${ic('check',18)} Entregue</button><button onclick="fPix('${e.id}')">${ic('pix',18)} Pix</button><button onclick="fOrc('${e.id}')">${ic('doc',18)} Orçamento</button><button onclick="ics('${e.id}')">${ic('bell',18)} Lembrete</button>`:`<span class="tag">${e.status}</span><button onclick="reabrir('${e.id}')">${ic('clock',18)} Reabrir</button>`}
       <button onclick="fMsg('${e.id}')">${ic('chat',18)} Mensagem</button>
       <button onclick="fEnc('${e.id}')">${ic('edit',18)} Editar</button>
     </div></div>`;
@@ -715,6 +727,7 @@ function vAjustes(){
   <button class="big" onclick="backup(false)">${ic('down',18)} Baixar cópia no aparelho</button>
   <button class="big" onclick="avisos()">${ic('bell',18)} Ativar avisos neste aparelho</button>
   <label>Restaurar cópia de segurança</label><input type="file" accept=".json" onchange="restaurar(this.files[0])">
+  <p class="muted">Versão do app: ${VERSAO}</p>
   <p class="muted">Seus dados ficam neste aparelho, com uma segunda cópia interna no navegador. Mesmo assim, envie a cópia para fora do aparelho de vez em quando. Para levar os dados para outro aparelho (celular e computador), envie a cópia aqui e restaure lá.</p></div>`;
 }
 function salvarConfig(){
@@ -885,6 +898,11 @@ function salvarEnc(id){
   o.clienteId=upsertCli(o.cliente,o.tel).id;
   if(id)Object.assign(S.encomendas.find(x=>x.id===id),o);else S.encomendas.push({id:uid(),status:'pendente',baixa:false,...o});
   salvar();fechar();render();
+}
+function reabrir(id){
+  const e=S.encomendas.find(x=>x.id===id);if(!e)return;
+  if(!confirm(`Voltar o pedido de ${e.cliente} para pendente?`+(e.baixa?'\n\nO estoque que já foi baixado na entrega não volta sozinho. Se precisar, ajuste em Estoque.':'')))return;
+  e.status='pendente';salvar();render();
 }
 function cancelarEnc(id){if(!confirm('Cancelar este pedido? Ele sai da agenda.'))return;S.encomendas.find(x=>x.id===id).status='cancelada';salvar();fechar();render()}
 function entregar(id){
@@ -1655,7 +1673,7 @@ function restaurar(f){
   if(!f)return;const rd=new FileReader();
   rd.onload=()=>{try{const d=JSON.parse(rd.result);if(!d.itens||!d.receitas||!d.encomendas)throw 0;
     if(!confirm('Isso substitui TODOS os dados atuais. Continuar?'))return;
-    S={...structuredClone(padrao),...d,config:{...padrao.config,...d.config}};S.seedV=1;if(!S.cliV){migraClientes();S.cliV=1}salvar();render();alert('Dados restaurados!')}
+    S={...clone(padrao),...d,config:{...padrao.config,...d.config}};S.seedV=1;if(!S.cliV){migraClientes();S.cliV=1}salvar();render();alert('Dados restaurados!')}
     catch(e){alert('Arquivo inválido.')}};
   rd.readAsText(f);
 }
@@ -1668,13 +1686,13 @@ function exemplo(){
   const rec={id:uid(),nome:'Bolo de chocolate 2kg',rendimento:16,minutos:120,margem:'',ingredientes:[{itemId:fa.id,qtd:400},{itemId:ac.id,qtd:300},{itemId:ov.id,qtd:5},{itemId:ch.id,qtd:100},{itemId:lc.id,qtd:790},{itemId:cx.id,qtd:1}]};
   S.receitas.push(rec);
   S.encomendas.push({id:uid(),cliente:'Maria (exemplo)',tel:'',receitaId:rec.id,descricao:'Parabéns Ana',data:addDias(hoje(),1),hora:'15:00',valor:180,sinal:50,obs:'',status:'pendente',baixa:false});
-  salvar();render();
+  migraClientes();salvar();render();
 }
 
 /* ===== Início ===== */
 async function iniciar(){
   // se o navegador apagou os dados principais, recupera da cópia interna
-  try{if(localStorage.getItem(KEY)===null){const d=await idbGet();if(d){const o=JSON.parse(d);S={...structuredClone(padrao),...o,config:{...padrao.config,...o.config}};try{localStorage.setItem(KEY,d)}catch(e){}recuperado=true}}}catch(e){}
+  try{if(localStorage.getItem(KEY)===null){const d=await idbGet();if(d){const o=JSON.parse(d);S={...clone(padrao),...o,config:{...padrao.config,...o.config}};try{localStorage.setItem(KEY,d)}catch(e){}recuperado=true}}}catch(e){}
   if(!S.seedV){if(!S.itens.length)basicos();S.seedV=1;salvar()}
   if(!S.extraV){completaExtras();S.extraV=1;salvar()}
   if(!S.cliV){migraClientes();S.cliV=1;salvar()}
